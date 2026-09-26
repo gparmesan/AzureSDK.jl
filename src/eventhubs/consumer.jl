@@ -455,6 +455,10 @@ function receive_batch(c::EventHubConsumerClient, on_event_batch::Function; part
             _receive_kwargs(kwargs)...), partition_id)
 end
 
+# do-block forms: receive(consumer; kwargs...) do ctx, event ... end
+receive(on_event::Function, c::EventHubConsumerClient; kwargs...) = receive(c, on_event; kwargs...)
+receive_batch(on_event_batch::Function, c::EventHubConsumerClient; kwargs...) = receive_batch(c, on_event_batch; kwargs...)
+
 function _receive_kwargs(kwargs)
     allowed = (:max_wait_time, :on_error, :on_partition_initialize, :on_partition_close, :owner_level,
         :track_last_enqueued_event_properties, :starting_position, :starting_position_inclusive)

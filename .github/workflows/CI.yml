@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["1.10", "1"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        env:
+          JULIA_NUM_THREADS: "4"
+
+  emulator:
+    # Runs the integration tests against the Event Hubs emulator and Azurite.
+    # Starting the emulator accepts Microsoft's emulator license terms, so this
+    # job only runs when the repository variable ACCEPT_EMULATOR_EULA is "Y".
+    if: ${{ vars.ACCEPT_EMULATOR_EULA == 'Y' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start emulators
+        run: docker compose -f test/emulator/docker-compose.yml up -d
+        env:
+          ACCEPT_EULA: "Y"
+      - name: Wait for the Event Hubs emulator
+        run: |
+          for i in $(seq 1 60); do
+            docker compose -f test/emulator/docker-compose.yml logs eventhubs | grep -q "Emulator Service is Successfully Up" && exit 0
+            sleep 5
+          done
+          docker compose -f test/emulator/docker-compose.yml logs
+          exit 1
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        env:
+          AZURESDK_EVENTHUBS_EMULATOR: "1"
+          JULIA_NUM_THREADS: "4"
