@@ -1,0 +1,22 @@
+# Julia
+Manifest.toml
+Manifest-v*.toml
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+/docs/build/
+/docs/Manifest.toml
+
+# Local settings, credentials and editor files
+.env
+.env.*
+*.pem
+*.pfx
+*.p12
+*.key
+.vscode/
+.idea/
+.DS_Store
+*~
+*.swp
+.claude/

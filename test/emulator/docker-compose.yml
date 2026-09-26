@@ -1,0 +1,28 @@
+# Local Azure Event Hubs emulator for the integration tests.
+#
+#   ACCEPT_EULA=Y docker compose -f test/emulator/docker-compose.yml up -d
+#   AZURESDK_EVENTHUBS_EMULATOR=1 julia --project -e 'using Pkg; Pkg.test()'
+#
+# Starting the emulator means accepting the Microsoft emulator license:
+# https://github.com/Azure/azure-event-hubs-emulator-installer
+name: azuresdk-jl-emulators
+
+services:
+  eventhubs:
+    image: mcr.microsoft.com/azure-messaging/eventhubs-emulator:latest
+    volumes:
+      - ./eventhubs-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json:ro
+    ports:
+      - "127.0.0.1:5672:5672"
+    environment:
+      BLOB_SERVER: azurite
+      METADATA_SERVER: azurite
+      ACCEPT_EULA: ${ACCEPT_EULA:?set ACCEPT_EULA=Y to accept the emulator license}
+    depends_on:
+      - azurite
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --skipApiVersionCheck
+    ports:
+      - "127.0.0.1:10000:10000"
