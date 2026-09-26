@@ -30,13 +30,7 @@ const AmqpAnnotatedMessage = AMQP.AMQPMessage
 
 # Generic functions shared by EventHubs and ServiceBus (both add methods), so the
 # two modules can be `using`-ed together without export conflicts.
-"""
-    from_connection_string(ClientType, conn_str; kwargs...)
-
-Create a client (`EventHubProducerClient`, `EventHubConsumerClient` or
-`ServiceBusClient`) from a connection string.
-"""
-function from_connection_string end
+import ..AzureCore: from_connection_string
 "Message/event body decoded as a UTF-8 string."
 function body_as_str end
 "Current encoded size of a batch in bytes."
@@ -234,18 +228,7 @@ function ClientConfig(fully_qualified_namespace::AbstractString, credential, sco
 end
 
 "HTTP client honouring `connection_verify` (CA bundle path or `false`) and `http_proxy`."
-function _http_client(connection_verify, http_proxy)
-    (connection_verify === true && http_proxy === nothing) && return nothing
-    tls = if connection_verify isa AbstractString
-        Reseau.TLS.Config(ca_file=String(connection_verify))
-    elseif connection_verify === false
-        Reseau.TLS.Config(verify_peer=false)
-    else
-        nothing
-    end
-    proxy = http_proxy === nothing ? nothing : AMQP._proxy_config(http_proxy)
-    return HTTP.Client(transport=HTTP.Transport(tls_config=tls, proxy=proxy))
-end
+_http_client(connection_verify, http_proxy) = AzureCore.http_client(connection_verify, http_proxy)
 
 "Create the (lazily connecting) AMQP connection for a client."
 function make_connection(cfg::ClientConfig)

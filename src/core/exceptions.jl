@@ -11,6 +11,7 @@
 #       ├── ClientAuthenticationError
 #       ├── ResourceNotFoundError
 #       ├── ResourceExistsError
+#       ├── ResourceModifiedError
 #       └── ResourceNotModifiedError
 
 """
@@ -54,26 +55,33 @@ end
 abstract type AbstractHttpResponseError <: AzureError end
 
 for T in (:HttpResponseError, :ClientAuthenticationError, :ResourceNotFoundError, :ResourceExistsError,
-    :ResourceNotModifiedError)
+    :ResourceModifiedError, :ResourceNotModifiedError)
     @eval begin
         """
-            $($(string(T)))(message; status_code=nothing, reason=nothing, response_body=nothing, error=nothing)
+            $($(string(T)))(message; status_code=nothing, reason=nothing, response_body=nothing, error_code=nothing,
+                             error=nothing)
+
+        `error_code` is the service's error code (e.g. `"BlobNotFound"`), when known.
         """
         struct $T <: AbstractHttpResponseError
             message::String
             status_code::Union{Nothing,Int}
             reason::Union{Nothing,String}
             response_body::Union{Nothing,String}
+            error_code::Union{Nothing,String}
             error::Any
         end
         $T(message::AbstractString=$(string(T)); status_code=nothing, reason=nothing, response_body=nothing,
-            error=nothing) = $T(String(message), status_code, reason, response_body, error)
+            error_code=nothing, error=nothing) =
+            $T(String(message), status_code, reason, response_body,
+                error_code === nothing ? nothing : String(error_code), error)
     end
 end
 
 function Base.showerror(io::IO, e::AbstractHttpResponseError)
     print(io, nameof(typeof(e)), ": ", e.message)
     e.status_code === nothing || print(io, " (status ", e.status_code, e.reason === nothing ? "" : " " * e.reason, ")")
+    e.error_code === nothing || print(io, " [", e.error_code, "]")
     if e.error !== nothing
         print(io, "\ncaused by: ")
         e.error isa Exception ? showerror(io, e.error) : print(io, e.error)

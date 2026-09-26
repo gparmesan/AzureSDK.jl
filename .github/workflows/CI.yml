@@ -34,6 +34,33 @@ jobs:
         env:
           JULIA_NUM_THREADS: "4"
 
+  azurite:
+    # Blob Storage integration tests against Azurite (MIT licensed; no EULA,
+    # so this job always runs).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Azurite
+        run: docker compose -f test/emulator/azurite-compose.yml up -d
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Wait for Azurite
+        run: |
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://127.0.0.1:10000/ && exit 0
+            sleep 2
+          done
+          docker compose -f test/emulator/azurite-compose.yml logs
+          exit 1
+      - uses: julia-actions/julia-runtest@v1
+        env:
+          AZURESDK_AZURITE: "1"
+          JULIA_NUM_THREADS: "4"
+
   emulator:
     # Runs the integration tests against the Event Hubs emulator and Azurite.
     # Starting the emulator accepts Microsoft's emulator license terms, so this
@@ -63,6 +90,7 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         env:
           AZURESDK_EVENTHUBS_EMULATOR: "1"
+          AZURESDK_AZURITE: "1"
           JULIA_NUM_THREADS: "4"
 
   servicebus-emulator:

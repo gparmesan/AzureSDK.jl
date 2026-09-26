@@ -3,6 +3,8 @@
 # compilation. No network access happens here.
 
 using PrecompileTools: @setup_workload, @compile_workload
+import Dates
+import HTTP
 
 @setup_workload begin
     cred = AzureCore.AzureNamedKeyCredential("precompile", "key")
@@ -44,6 +46,31 @@ using PrecompileTools: @setup_workload, @compile_workload
             timedwait(() -> istaskdone(task), 5.0)
         catch err
             @debug "precompile workload failed" exception = err
+        end
+        try
+            # Blob Storage: clients, signing, SAS and response parsing (no requests are sent)
+            B = Storage.Blob
+            svc = B.from_connection_string(B.BlobServiceClient, "UseDevelopmentStorage=true")
+            bc = B.get_blob_client(B.get_container_client(svc, "c"), "dir/b.txt")
+            bc.url
+            key = Storage.DEV_ACCOUNT_KEY
+            Storage.shared_key_signature("devstoreaccount1", key, "GET", bc.url * "?comp=list",
+                ["x-ms-date" => "Mon, 05 Jan 2026 10:11:12 GMT", "x-ms-version" => Storage.DEFAULT_API_VERSION])
+            B.generate_blob_sas("a", "c", "b"; account_key=key, permission="r", expiry=Dates.DateTime(2030))
+            B.generate_account_sas("a", key, "sco", "rl", Dates.DateTime(2030))
+            xml = "\ufeff<?xml version=\"1.0\" encoding=\"utf-8\"?><EnumerationResults><Blobs><Blob><Name>b</Name>" *
+                  "<Properties><Last-Modified>Mon, 05 Jan 2026 10:11:12 GMT</Last-Modified><Etag>0x1</Etag>" *
+                  "<Content-Length>1</Content-Length><BlobType>BlockBlob</BlobType></Properties><Metadata><k>v</k>" *
+                  "</Metadata></Blob><BlobPrefix><Name>d/</Name></BlobPrefix></Blobs><NextMarker/></EnumerationResults>"
+            x = Storage.xml_parse(xml)
+            [B._blob_properties_from_xml(e, "c") for e in Storage.xfindall(Storage.xfind(x, "Blobs"), "Blob")]
+            resp = HTTP.Response(200, ["ETag" => "\"0x1\"", "Content-Length" => "1", "x-ms-meta-k" => "v",
+                "Last-Modified" => "Mon, 05 Jan 2026 10:11:12 GMT", "x-ms-blob-type" => "BlockBlob"])
+            B._blob_properties_from_headers(resp, bc)
+            Storage.response_dict(resp)
+            Storage.storage_error(HTTP.Response(404, ["x-ms-error-code" => "BlobNotFound"]))
+        catch err
+            @debug "precompile workload (storage) failed" exception = err
         end
     end
 end

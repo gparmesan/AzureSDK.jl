@@ -25,6 +25,7 @@ using ..AMQP: AMQPException, ClientConnection, AMQPMessage, AMQPDescribed
 using ..Messaging
 using ..Messaging: ClientConfig, TransportType
 import ..Messaging: from_connection_string, body_as_str, size_in_bytes, max_size_in_bytes
+using ..Storage.Blob: ContainerClient, upload_blob, get_blob_client, list_blobs
 
 export EventHubProducerClient, EventHubConsumerClient, EventData, EventDataBatch, TransportType, RetryMode,
     AmqpAnnotatedMessage,

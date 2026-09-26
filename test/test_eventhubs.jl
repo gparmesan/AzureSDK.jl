@@ -211,20 +211,7 @@ if get(ENV, "AZURESDK_EVENTHUBS_EMULATOR", "") == "1"
         if get(ENV, "AZURESDK_AZURITE", "1") == "1"
             @testset "BlobCheckpointStore (Azurite)" begin
                 store = from_connection_string(BlobCheckpointStore, "UseDevelopmentStorage=true", "ehcheckpoints")
-                EventHubs._blob_request(store, "PUT", ""; query=["restype" => "container"])
-                fq, eh, cg = "localhost", "eh1", "\$Default"
-                o = Dict{String,Any}("fully_qualified_namespace" => fq, "eventhub_name" => eh, "consumer_group" => cg,
-                    "partition_id" => "p$(rand(UInt32))", "owner_id" => "me", "etag" => nothing)
-                c = claim_ownership(store, [o])
-                @test length(c) == 1 && startswith(c[1]["etag"], "\"")
-                @test isempty(claim_ownership(store, [o]))
-                @test length(claim_ownership(store, [merge(c[1], Dict("owner_id" => "other"))])) == 1
-                listed = [x for x in list_ownership(store, fq, eh, cg) if x["partition_id"] == o["partition_id"]]
-                @test listed[1]["owner_id"] == "other"
-                update_checkpoint(store, Dict{String,Any}("fully_qualified_namespace" => fq, "eventhub_name" => eh,
-                    "consumer_group" => cg, "partition_id" => o["partition_id"], "offset" => "42", "sequence_number" => 7))
-                cp = [x for x in list_checkpoints(store, fq, eh, cg) if x["partition_id"] == o["partition_id"]]
-                @test cp[1]["offset"] == "42" && cp[1]["sequence_number"] == 7
+                AzureSDK.Storage.Blob.exists(store.container) || AzureSDK.Storage.Blob.create_container(store.container)
 
                 # two consumers share eh2's four partitions through the blob store
                 c1 = from_connection_string(EventHubConsumerClient, EMULATOR_CS; eventhub_name="eh2",

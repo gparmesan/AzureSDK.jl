@@ -5,6 +5,7 @@
 # Integration tests against the local emulators run when
 #   AZURESDK_EVENTHUBS_EMULATOR=1   (Event Hubs + Azurite, test/emulator/docker-compose.yml)
 #   AZURESDK_SERVICEBUS_EMULATOR=1  (Service Bus, test/emulator/servicebus-compose.yml)
+#   AZURESDK_AZURITE=1              (Blob Storage, test/emulator/azurite-compose.yml)
 using Test
 
 include("mock_broker.jl")
@@ -18,4 +19,6 @@ include("certs.jl")
     include("test_servicebus.jl")
     include("test_eventhubs.jl")
     include("test_servicebus_emulator.jl")
+    include("test_blob.jl")
+    include("test_blob_azurite.jl")
 end

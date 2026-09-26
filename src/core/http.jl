@@ -84,6 +84,19 @@ end
 
 _first_line(s::AbstractString) = first(split(s, '\n'))
 
+const _STATUS_TEXT = Dict(200 => "OK", 201 => "Created", 202 => "Accepted", 204 => "No Content",
+    206 => "Partial Content", 304 => "Not Modified", 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
+    404 => "Not Found", 405 => "Method Not Allowed", 408 => "Request Timeout", 409 => "Conflict", 410 => "Gone",
+    411 => "Length Required", 412 => "Precondition Failed", 413 => "Payload Too Large", 416 => "Range Not Satisfiable",
+    429 => "Too Many Requests", 500 => "Internal Server Error", 501 => "Not Implemented", 502 => "Bad Gateway",
+    503 => "Service Unavailable", 504 => "Gateway Timeout")
+
+"Reason phrase of a response (from the response, or the standard text for its status)."
+function status_text(resp)
+    r = hasproperty(resp, :reason) ? string(getproperty(resp, :reason)) : ""
+    return isempty(r) ? get(_STATUS_TEXT, resp.status, "") : r
+end
+
 "Raise the appropriate `AbstractHttpResponseError` for an unsuccessful response."
 function raise_for_status(resp; message::AbstractString="")
     200 <= resp.status < 300 && return resp
@@ -93,6 +106,52 @@ function raise_for_status(resp; message::AbstractString="")
     T = resp.status in (401, 403) ? ClientAuthenticationError :
         resp.status == 404 ? ResourceNotFoundError :
         resp.status == 409 ? ResourceExistsError :
+        resp.status == 412 ? ResourceModifiedError :
         resp.status == 304 ? ResourceNotModifiedError : HttpResponseError
-    throw(T(msg; status_code=resp.status, reason=HTTP.StatusCodes.statustext(resp.status), response_body=body))
+    throw(T(msg; status_code=resp.status, reason=status_text(resp), response_body=body))
+end
+
+"""
+    proxy_config(http_proxy) -> proxy setting for HTTP.jl (or `nothing`)
+
+Normalise a proxy setting: a URL string, or a dict / named tuple with
+`proxy_hostname`, `proxy_port` (3128), `username` and `password` (the
+Python SDKs' `http_proxy` format).
+"""
+function proxy_config(p)
+    p === nothing && return nothing
+    p isa AbstractString && return HTTP.ProxyURL(String(p))
+    get_(k) = p isa AbstractDict ? get(p, k, get(p, String(k), nothing)) : get(p, k, nothing)
+    host = get_(:proxy_hostname)
+    host === nothing && throw(ArgumentError("http_proxy requires proxy_hostname"))
+    port = something(get_(:proxy_port), 3128)
+    user = get_(:username)
+    pass = get_(:password)
+    auth = user === nothing ? "" : string(URIs.escapeuri(String(user)), ":", URIs.escapeuri(String(something(pass, ""))), "@")
+    return HTTP.ProxyURL("http://$(auth)$(host):$(port)")
+end
+
+"""
+    http_client(connection_verify, http_proxy) -> Union{Nothing,HTTP.Client}
+
+An `HTTP.Client` honouring `connection_verify` (`true`, `false` or the path
+of a CA bundle) and `http_proxy`, or `nothing` when the defaults apply.
+"""
+function http_client(connection_verify, http_proxy)
+    (connection_verify === true && http_proxy === nothing) && return nothing
+    tls = if connection_verify isa AbstractString
+        Reseau.TLS.Config(ca_file=String(connection_verify))
+    elseif connection_verify === false
+        Reseau.TLS.Config(verify_peer=false)
+    else
+        nothing
+    end
+    return HTTP.Client(transport=HTTP.Transport(tls_config=tls, proxy=proxy_config(http_proxy)))
+end
+
+"True for loopback / development hosts where plain HTTP is acceptable."
+function is_local_host(host::AbstractString)
+    h = lowercase(strip(host, ['[', ']']))
+    return h in ("localhost", "127.0.0.1", "::1") || startswith(h, "127.") || endswith(h, ".localhost") ||
+           endswith(h, ".test") || !occursin(r"[.:]", h)
 end

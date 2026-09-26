@@ -1,9 +1,9 @@
 # AzureSDK.jl
 
-A pure-Julia client library for **Azure Event Hubs**, **Azure Service Bus** and
-**Microsoft Entra ID authentication**, modelled closely on the official Azure
-SDK for Python (`azure-eventhub`, `azure-servicebus`, `azure-identity`,
-`azure-core`).
+A pure-Julia client library for **Azure Event Hubs**, **Azure Service Bus**,
+**Azure Blob Storage** and **Microsoft Entra ID authentication**, modelled
+closely on the official Azure SDK for Python (`azure-eventhub`,
+`azure-servicebus`, `azure-storage-blob`, `azure-identity`, `azure-core`).
 
 * **AMQP 1.0** over TLS (port 5671), **AMQP over WebSockets** (port 443, proxy
   support) and **HTTP/REST** transports
@@ -34,6 +34,7 @@ Julia 1.10 or newer is required.
 | `AzureSDK.Identity`   | `azure.identity`       |
 | `AzureSDK.EventHubs`  | `azure.eventhub` (+ `azure.eventhub.extensions.checkpointstoreblob`) |
 | `AzureSDK.ServiceBus` | `azure.servicebus`     |
+| `AzureSDK.Storage.Blob` | `azure.storage.blob` |
 | `AzureSDK.AzureCore`  | `azure.core` (credentials, errors, retry options) |
 | `AzureSDK.AMQP`       | (`pyamqp`) the AMQP 1.0 engine |
 
@@ -54,6 +55,9 @@ argument, with the same names and keyword arguments:
 | `event.sequence_number`, `msg.lock_token`           | the same (`event.sequence_number`, `msg.lock_token`)    |
 | `TransportType.AmqpOverWebsocket`                   | `TransportType.AmqpOverWebsocket`                        |
 | `ServiceBusReceiveMode.PEEK_LOCK`                   | `ServiceBusReceiveMode.PEEK_LOCK`                        |
+| `container.upload_blob("a.txt", data, overwrite=True)` | `upload_blob(container, "a.txt", data; overwrite=true)` |
+| `blob.download_blob().readall()`                    | `readall(download_blob(blob))`                           |
+| `for b in container.list_blobs(): ...`              | `for b in list_blobs(container) ... end`                 |
 
 ## Authentication
 
@@ -102,9 +106,9 @@ The Python-style call `receive(consumer, on_event; ...)` works as well.
 
 * Load balancing across processes: pass
   `checkpoint_store=BlobCheckpointStore(account_url, container; credential=...)`
-  (or `from_connection_string(BlobCheckpointStore, conn, container)`). The blob
-  layout is the same as in the other Azure SDKs, so Julia and Python consumers
-  can share a consumer group.
+  (or `from_connection_string(BlobCheckpointStore, conn, container)`; it is
+  built on `AzureSDK.Storage.Blob`). The blob layout is the same as in the
+  other Azure SDKs, so Julia and Python consumers can share a consumer group.
 * `receive_batch(consumer, on_event_batch; max_batch_size=300, max_wait_time=...)`
 * `get_eventhub_properties`, `get_partition_ids`, `get_partition_properties`
 * `owner_level`, `track_last_enqueued_event_properties`, `prefetch`,
@@ -140,6 +144,88 @@ dead-letter sub-queues, message batches, sessions
 (`session_id="…"` or `NEXT_AVAILABLE_SESSION`, `get_state`, `set_state`,
 `renew_lock`) and prefetching.
 
+## Blob Storage
+
+```julia
+using AzureSDK.Storage.Blob, AzureSDK.Identity
+
+svc = BlobServiceClient("https://myaccount.blob.core.windows.net"; credential=DefaultAzureCredential())
+# or: from_connection_string(BlobServiceClient, ENV["AZURE_STORAGE_CONNECTION_STRING"])
+container = create_container(svc, "reports")          # get_container_client(svc, "reports") if it exists
+
+# upload: bytes, strings or any IO (files, pipes); large data is sent in parallel blocks
+upload_blob(container, "2026/summary.json", """{"ok": true}""";
+    content_settings=ContentSettings(content_type="application/json"), metadata=Dict("owner" => "etl"))
+open("big.parquet") do io
+    upload_blob(container, "data/big.parquet", io; overwrite=true, max_concurrency=8)
+end
+
+# download: everything, into an IO, chunk by chunk, or as a Julia IO stream
+bytes = readall(download_blob(container, "data/big.parquet"; max_concurrency=8))
+open("copy.parquet", "w") do io
+    readinto(download_blob(container, "data/big.parquet"; max_concurrency=8), io)
+end
+text = content_as_text(download_blob(container, "2026/summary.json"))
+for line in eachline(download_blob(container, "logs/app.log"))   # streams 4 MiB at a time
+    occursin("ERROR", line) && println(line)
+end
+
+# list (lazily paged), hierarchically, by tag
+for b in list_blobs(container; name_starts_with="2026/", include=["metadata"])
+    println(b.name, " ", b.size, " ", b.last_modified)
+end
+walk_blobs(container; delimiter="/")                   # BlobPrefix "directories" + BlobProperties
+find_blobs_by_tags(svc, "\"project\"='alpha'")
+
+# SAS tokens
+sas = generate_blob_sas("myaccount", "reports", "2026/summary.json"; account_key=key,
+    permission=BlobSasPermissions(read=true), expiry=Dates.Hour(1))
+udk = get_user_delegation_key(svc, Dates.now(Dates.UTC), Dates.Hour(1))   # Entra ID: user delegation SAS
+sas = generate_container_sas("myaccount", "reports"; user_delegation_key=udk, permission="rl", expiry=Dates.Hour(1))
+```
+
+Clients: `BlobServiceClient`, `ContainerClient`, `BlobClient` (construct
+directly, `from_connection_string`, `from_container_url`, `from_blob_url`, or
+`get_container_client` / `get_blob_client`) and `BlobLeaseClient`
+(`acquire_lease`, `renew`, `release`, `change`, `break_lease`). Credentials:
+`TokenCredential` (with `audience` and tenant discovery), account key
+(`AzureNamedKeyCredential` or the key string), SAS (`AzureSasCredential`, a
+SAS string or a SAS URL) or anonymous.
+
+Supported: containers (create, delete, exists, properties, metadata, access
+policies, listing with paging, undelete); block blobs (single-shot and
+parallel chunked upload, `stage_block`, `stage_block_from_url`,
+`commit_block_list`, `get_block_list`); page blobs (`create_page_blob`,
+`upload_page`, `upload_pages_from_url`, `clear_page`, `get_page_ranges`,
+`list_page_ranges`, `resize_blob`, `set_sequence_number`); append blobs
+(`create_append_blob`, `append_block`, `append_block_from_url`,
+`seal_append_blob`); ranged and parallel downloads with MD5 validation;
+properties, HTTP headers, metadata, index tags, access tiers, snapshots,
+versions, soft delete/undelete, copy (`start_copy_from_url`, `abort_copy`,
+`upload_blob_from_url`), immutability policies and legal holds, leases,
+conditional requests (`etag` + `MatchConditions`, `if_modified_since`,
+`if_tags_match_condition`), customer-provided keys and encryption scopes,
+batch deletes and tier changes (`delete_blobs`,
+`set_standard_blob_tier_blobs`), service properties (logging, metrics, CORS,
+soft delete, static website), `get_service_stats`,
+`get_account_information`, and account / container / blob SAS generation
+(account key or user delegation key).
+
+Transfer tuning uses the Python keyword arguments on any client:
+`max_single_put_size` (64 MiB), `max_block_size` (4 MiB), `max_page_size`,
+`max_single_get_size` (32 MiB) and `max_chunk_get_size` (4 MiB); pass
+`max_concurrency` to `upload_blob` / `download_blob`. Downloads pin the
+blob's ETag, so a blob modified mid-download raises `ResourceModifiedError`
+instead of returning mixed content.
+
+Differences from Python: metadata is returned as a `CaseInsensitiveDict`
+(HTTP.jl normalises header name case; Azure treats metadata names
+case-insensitively); listing ETags are quoted like header ETags;
+`PageRange` uses `start`/`stop` (inclusive); `readall` returns bytes unless
+an `encoding` was given. Not implemented: client-side encryption,
+`query_blob` (quick query), CRC64 content validation and reads from the
+secondary endpoint.
+
 ## Transports, proxies and custom endpoints
 
 ```julia
@@ -162,6 +248,9 @@ Connection strings with `UseDevelopmentEmulator=true` connect to the local
 [Event Hubs](https://github.com/Azure/azure-event-hubs-emulator-installer) and
 [Service Bus](https://github.com/Azure/azure-service-bus-emulator-installer)
 emulators without TLS. The flag is refused for non-local hosts.
+`from_connection_string(BlobServiceClient, "UseDevelopmentStorage=true")`
+connects to [Azurite](https://github.com/Azure/Azurite); plain `http://`
+storage URLs are only accepted for local hosts.
 
 ```julia
 cs = "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
@@ -174,6 +263,10 @@ Errors mirror the Python hierarchies (`EventHubError` and `ServiceBusError`
 subtypes such as `ConnectionLostError`, `AuthenticationError`,
 `MessageLockLostError`, `SessionLockLostError`, `MessageSizeExceededError`,
 `ServiceBusServerBusyError`, …, all subtypes of `AzureCore.AzureError`).
+Blob Storage raises the `azure.core` types (`ResourceNotFoundError`,
+`ResourceExistsError`, `ResourceModifiedError`, `ClientAuthenticationError`,
+`HttpResponseError`, `ServiceRequestError`) with the service's `error_code`
+(compare with `StorageErrorCode.blob_not_found` etc.).
 Transient failures (connection loss, timeouts, server busy) are retried
 according to `retry_total`, `retry_backoff_factor`, `retry_backoff_max` and
 `retry_mode`, and connections and links are re-established transparently.
@@ -188,7 +281,10 @@ according to `retry_total`, `retry_backoff_factor`, `retry_backoff_max` and
   URLs in errors are stripped of their query strings (SAS signatures).
 * HTTP requests never follow redirects or store cookies, so credentials are
   never forwarded to another host; Service Bus REST lock URLs must point back
-  to the namespace host.
+  to the namespace host. Bearer tokens, account keys and SAS tokens are only
+  sent over HTTPS (plain HTTP is limited to local emulators).
+* The Storage XML reader rejects DTDs/entity declarations (no XXE or entity
+  expansion), bounds nesting depth and requires valid UTF-8.
 * The AMQP decoder validates every length and count against the received
   bytes, bounds nesting depth, frame and message sizes, so malformed or
   hostile input raises an error instead of exhausting memory.
@@ -229,6 +325,10 @@ generates throw-away certificates at run time. Integration tests against
 Microsoft's local emulators run when enabled:
 
 ```sh
+# Azurite (Blob Storage; MIT licensed, no EULA)
+docker compose -f test/emulator/azurite-compose.yml up -d
+AZURESDK_AZURITE=1 julia --project -e 'using Pkg; Pkg.test()'
+
 # Event Hubs emulator + Azurite
 ACCEPT_EULA=Y docker compose -f test/emulator/docker-compose.yml up -d
 # Service Bus emulator + SQL Server (~2 GB RAM)
@@ -238,9 +338,11 @@ ACCEPT_EULA=Y docker compose -f test/emulator/servicebus-compose.yml up -d
 AZURESDK_EVENTHUBS_EMULATOR=1 AZURESDK_SERVICEBUS_EMULATOR=1 julia --project -e 'using Pkg; Pkg.test()'
 ```
 
-Starting the emulators means accepting Microsoft's emulator (and SQL Server)
-license terms. Note that the emulators do not validate SAS keys and do not
-support TLS or WebSockets, so those paths are covered by the mock broker.
+Starting the Event Hubs and Service Bus emulators means accepting Microsoft's
+emulator (and SQL Server) license terms. Note that those emulators do not
+validate SAS keys and do not support TLS or WebSockets, so those paths are
+covered by the mock broker. Azurite does validate Shared Key and SAS
+signatures.
 
 ## Contributing
 
