@@ -1,0 +1,6 @@
+[deps]
+AzureSDK = "c51efe4f-395b-4770-bb5d-3ee3ff307ce3"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+
+[compat]
+Documenter = "1"

@@ -23,7 +23,7 @@ end
 CaseInsensitiveDict(itr::AbstractDict{K,V}) where {K,V} = CaseInsensitiveDict{V}(itr)
 CaseInsensitiveDict(itr) = CaseInsensitiveDict{Any}(itr)
 CaseInsensitiveDict(ps::Pair...) = CaseInsensitiveDict{Any}(ps)
-CaseInsensitiveDict(ps::Pair{<:Any,V}...) where {V} = CaseInsensitiveDict{V}(ps)
+CaseInsensitiveDict(p::Pair{<:Any,V}, ps::Pair{<:Any,V}...) where {V} = CaseInsensitiveDict{V}((p, ps...))
 
 _ci(k) = lowercase(string(k))
 Base.length(d::CaseInsensitiveDict) = length(d.d)

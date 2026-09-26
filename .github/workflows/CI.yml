@@ -33,6 +33,12 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         env:
           JULIA_NUM_THREADS: "4"
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   azurite:
     # Blob Storage integration tests against Azurite (MIT licensed; no EULA,
@@ -60,6 +66,12 @@ jobs:
         env:
           AZURESDK_AZURITE: "1"
           JULIA_NUM_THREADS: "4"
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   emulator:
     # Runs the integration tests against the Event Hubs emulator and Azurite.
