@@ -225,15 +225,22 @@ julia --project -e 'using Pkg; Pkg.test()'
 
 The suite uses an in-process mock AMQP broker (Service Bus semantics, TLS,
 WebSockets), local HTTP stand-ins for Entra ID, IMDS and the REST APIs, and
-generates throw-away certificates at run time. Integration tests against the
-real Event Hubs emulator and Azurite run with
+generates throw-away certificates at run time. Integration tests against
+Microsoft's local emulators run when enabled:
 
 ```sh
+# Event Hubs emulator + Azurite
 ACCEPT_EULA=Y docker compose -f test/emulator/docker-compose.yml up -d
-AZURESDK_EVENTHUBS_EMULATOR=1 julia --project -e 'using Pkg; Pkg.test()'
+# Service Bus emulator + SQL Server (~2 GB RAM)
+export MSSQL_SA_PASSWORD='<any strong password>'
+ACCEPT_EULA=Y docker compose -f test/emulator/servicebus-compose.yml up -d
+
+AZURESDK_EVENTHUBS_EMULATOR=1 AZURESDK_SERVICEBUS_EMULATOR=1 julia --project -e 'using Pkg; Pkg.test()'
 ```
 
-(starting the emulator means accepting Microsoft's emulator license terms).
+Starting the emulators means accepting Microsoft's emulator (and SQL Server)
+license terms. Note that the emulators do not validate SAS keys and do not
+support TLS or WebSockets, so those paths are covered by the mock broker.
 
 ## Contributing
 

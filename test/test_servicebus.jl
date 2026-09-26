@@ -206,6 +206,14 @@ bodies(msgs) = [body_as_str(m) for m in msgs]
             big = ServiceBusMessage(rand(UInt8, 300_000))
             @test_throws MessageSizeExceededError send_messages(get_queue_sender(client, "q"), big)
             @test_throws ArgumentError get_queue_sender(client, "bad name")
+            b.reject_tokens = true
+            try
+                bad = from_connection_string(ServiceBusClient, cs; retry_total=0)
+                @test_throws ServiceBusAuthenticationError send_messages(get_queue_sender(bad, "q"), ServiceBusMessage("x"))
+                close(bad)
+            finally
+                b.reject_tokens = false
+            end
         end
 
         @testset "raw AMQP messages (AmqpAnnotatedMessage)" begin

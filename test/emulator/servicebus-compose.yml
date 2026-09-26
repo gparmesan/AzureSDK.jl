@@ -1,0 +1,35 @@
+# Local Azure Service Bus emulator (with SQL Server) for the integration tests.
+#
+#   export MSSQL_SA_PASSWORD='<any strong password>'
+#   ACCEPT_EULA=Y docker compose -f test/emulator/servicebus-compose.yml up -d
+#   AZURESDK_SERVICEBUS_EMULATOR=1 julia --project -e 'using Pkg; Pkg.test()'
+#
+# Starting it means accepting the Service Bus emulator and SQL Server license
+# terms: https://github.com/Azure/azure-service-bus-emulator-installer
+# The AMQP port is published on 5673 so it can run next to the Event Hubs
+# emulator (5672). SQL Server needs about 2 GB of RAM.
+name: azuresdk-jl-servicebus
+
+services:
+  servicebus:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    volumes:
+      - ./servicebus-config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro
+    ports:
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:5300:5300"
+    environment:
+      SQL_SERVER: mssql
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD to a strong password}
+      ACCEPT_EULA: ${ACCEPT_EULA:?set ACCEPT_EULA=Y to accept the emulator license}
+      SQL_WAIT_INTERVAL: "15"
+    depends_on:
+      - mssql
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    mem_limit: 3g
+    environment:
+      ACCEPT_EULA: ${ACCEPT_EULA:?set ACCEPT_EULA=Y to accept the SQL Server license}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD to a strong password}
+      MSSQL_MEMORY_LIMIT_MB: "2048"

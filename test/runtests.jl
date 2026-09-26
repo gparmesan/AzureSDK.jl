@@ -2,8 +2,9 @@
 #
 #   julia --project -e 'using Pkg; Pkg.test()'
 #
-# Integration tests against the local Event Hubs emulator + Azurite run when
-# AZURESDK_EVENTHUBS_EMULATOR=1 (see test/emulator/docker-compose.yml).
+# Integration tests against the local emulators run when
+#   AZURESDK_EVENTHUBS_EMULATOR=1   (Event Hubs + Azurite, test/emulator/docker-compose.yml)
+#   AZURESDK_SERVICEBUS_EMULATOR=1  (Service Bus, test/emulator/servicebus-compose.yml)
 using Test
 
 include("mock_broker.jl")
@@ -16,4 +17,5 @@ include("certs.jl")
     include("test_identity.jl")
     include("test_servicebus.jl")
     include("test_eventhubs.jl")
+    include("test_servicebus_emulator.jl")
 end
