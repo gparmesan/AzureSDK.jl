@@ -303,11 +303,20 @@ end
 
 Add `message` if it fits in the batch.
 """
-function try_add_message!(b::ServiceBusMessageBatch, m::ServiceBusMessage)
+to_amqp_message(m::AMQPMessage) = m
+_session_of(m::ServiceBusMessage) = m.session_id
+_session_of(m::AMQPMessage) = m.properties === nothing ? nothing : m.properties.group_id
+function _pkey_of(m::ServiceBusMessage)
+    return m.partition_key
+end
+_pkey_of(m::AMQPMessage) = m.message_annotations === nothing ? nothing : get(m.message_annotations, ANN_PARTITION_KEY, nothing)
+
+function try_add_message!(b::ServiceBusMessageBatch, m::Union{ServiceBusMessage,AMQPMessage})
+    sid, pk = _session_of(m), _pkey_of(m)
     if isempty(b.messages)
-        b.partition_key = something(m.partition_key, m.session_id, Some(nothing))
-        b.session_id = m.session_id
-    elseif m.session_id != b.session_id || something(m.partition_key, m.session_id, Some(nothing)) != b.partition_key
+        b.partition_key = something(pk, sid, Some(nothing))
+        b.session_id = sid
+    elseif sid != b.session_id || something(pk, sid, Some(nothing)) != b.partition_key
         throw(ArgumentError("all messages in a batch must have the same session_id and partition_key"))
     end
     enc = AMQP.encode_message(to_amqp_message(m))
@@ -329,7 +338,7 @@ end
 Add a message; throws `MessageSizeExceededError` when it does not fit
 (Python: `ServiceBusMessageBatch.add_message`).
 """
-function add_message!(b::ServiceBusMessageBatch, m::ServiceBusMessage)
+function add_message!(b::ServiceBusMessageBatch, m::Union{ServiceBusMessage,AMQPMessage})
     try_add_message!(b, m) || throw(MessageSizeExceededError(
         "ServiceBusMessageBatch has reached its size limit: $(b.max_size_in_bytes)"))
     return b

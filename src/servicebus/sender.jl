@@ -106,7 +106,7 @@ function send_messages(s::ServiceBusSender, batch::ServiceBusMessageBatch; timeo
     return nothing
 end
 
-function send_messages(s::ServiceBusSender, messages::AbstractVector{ServiceBusMessage}; timeout=nothing)
+function send_messages(s::ServiceBusSender, messages::AbstractVector{<:Union{ServiceBusMessage,AMQPMessage}}; timeout=nothing)
     isempty(messages) && return nothing
     batch = create_message_batch(s)
     for m in messages
@@ -116,8 +116,8 @@ function send_messages(s::ServiceBusSender, messages::AbstractVector{ServiceBusM
     return send_messages(s, batch; timeout=timeout)
 end
 
-send_messages(s::ServiceBusSender, m::ServiceBusMessage; timeout=nothing) =
-    send_messages(s, ServiceBusMessage[m]; timeout=timeout)
+send_messages(s::ServiceBusSender, m::Union{ServiceBusMessage,AMQPMessage}; timeout=nothing) =
+    send_messages(s, [m]; timeout=timeout)
 
 """
     schedule_messages(sender, messages, schedule_time_utc::DateTime; timeout=nothing) -> Vector{Int64}

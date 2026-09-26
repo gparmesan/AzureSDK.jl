@@ -27,6 +27,7 @@ using ..Messaging: ClientConfig, TransportType
 import ..Messaging: from_connection_string, body_as_str, size_in_bytes, max_size_in_bytes
 
 export EventHubProducerClient, EventHubConsumerClient, EventData, EventDataBatch, TransportType, RetryMode,
+    AmqpAnnotatedMessage,
     from_connection_string, EventHubConnectionStringProperties,
     create_batch, add!, try_add!, send_batch, send_event, receive, receive_batch,
     get_eventhub_properties, get_partition_ids, get_partition_properties,

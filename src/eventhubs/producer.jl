@@ -159,7 +159,7 @@ function send_batch(p::EventHubProducerClient, batch::EventDataBatch; timeout::U
     return nothing
 end
 
-function send_batch(p::EventHubProducerClient, events::AbstractVector{EventData}; partition_id=nothing,
+function send_batch(p::EventHubProducerClient, events::AbstractVector{<:Union{EventData,AMQPMessage}}; partition_id=nothing,
     partition_key=nothing, timeout::Union{Nothing,Real}=nothing)
     isempty(events) && return nothing
     batch = create_batch(p; partition_id=partition_id, partition_key=partition_key)
@@ -175,7 +175,7 @@ end
 
 Send a single event.
 """
-function send_event(p::EventHubProducerClient, event::EventData; partition_id=nothing, partition_key=nothing,
+function send_event(p::EventHubProducerClient, event::Union{EventData,AMQPMessage}; partition_id=nothing, partition_key=nothing,
     timeout::Union{Nothing,Real}=nothing)
     return send_batch(p, [event]; partition_id=partition_id, partition_key=partition_key, timeout=timeout)
 end

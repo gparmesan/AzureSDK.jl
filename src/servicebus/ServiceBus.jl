@@ -24,7 +24,7 @@ import ..Messaging: from_connection_string, body_as_str, size_in_bytes, max_size
 
 export ServiceBusClient, ServiceBusSender, ServiceBusReceiver, ServiceBusSession, ServiceBusMessage,
     ServiceBusReceivedMessage, ServiceBusMessageBatch, ServiceBusReceiveMode, ServiceBusSubQueue,
-    ServiceBusMessageState, NEXT_AVAILABLE_SESSION, TransportType, RetryMode, AutoLockRenewer,
+    ServiceBusMessageState, NEXT_AVAILABLE_SESSION, TransportType, RetryMode, AutoLockRenewer, AmqpAnnotatedMessage,
     from_connection_string, ServiceBusConnectionStringProperties,
     get_queue_sender, get_topic_sender, get_queue_receiver, get_subscription_receiver,
     send_messages, create_message_batch, add_message!, try_add_message!, schedule_messages,

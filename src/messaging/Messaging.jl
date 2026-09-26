@@ -17,7 +17,16 @@ using ..AzureCore: retry_options, backoff_delay, sas_expiry, signature
 using ..AMQP
 using ..AMQP: AMQPException, ClientConnection, TransportConfig, ClientClosedError
 
-export TransportType
+export TransportType, AmqpAnnotatedMessage
+
+"""
+    AmqpAnnotatedMessage
+
+Alias of `AzureSDK.AMQP.AMQPMessage` (Python: `azure.core.amqp.AmqpAnnotatedMessage`):
+a raw AMQP message with full control over header, annotations, properties and
+body. Can be sent with `send_messages`, `add_message!`, `send_event` and `add!`.
+"""
+const AmqpAnnotatedMessage = AMQP.AMQPMessage
 
 # Generic functions shared by EventHubs and ServiceBus (both add methods), so the
 # two modules can be `using`-ed together without export conflicts.

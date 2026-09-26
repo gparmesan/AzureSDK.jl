@@ -156,6 +156,15 @@ function to_amqp_message(e::EventData; partition_key::Union{Nothing,AbstractStri
     return m
 end
 
+function to_amqp_message(m::AMQPMessage; partition_key::Union{Nothing,AbstractString}=nothing)
+    partition_key === nothing && return m
+    out = deepcopy(m)
+    ann = something(out.message_annotations, Dict{Any,Any}())
+    ann[PROP_PARTITION_KEY] = String(partition_key)
+    out.message_annotations = ann
+    return out
+end
+
 "Wrap a received AMQP message."
 function EventData(m::AMQPMessage)
     body = m.body_type === :data ? AMQP.body_bytes(m) : m.body
@@ -222,7 +231,7 @@ end
 
 Add `event` if it fits; return `false` (leaving the batch unchanged) otherwise.
 """
-function try_add!(b::EventDataBatch, e::EventData)
+function try_add!(b::EventDataBatch, e::Union{EventData,AMQPMessage})
     enc = AMQP.encode_message(to_amqp_message(e; partition_key=b.partition_key))
     new_size = b.size_in_bytes + length(enc) + _data_section_overhead(length(enc))
     new_size > b.max_size_in_bytes && return false
@@ -237,7 +246,7 @@ end
 Add `event` to the batch. Throws `ArgumentError` when the batch has reached
 its size limit (Python: `ValueError`); use [`try_add!`](@ref) to test instead.
 """
-function add!(b::EventDataBatch, e::EventData)
+function add!(b::EventDataBatch, e::Union{EventData,AMQPMessage})
     try_add!(b, e) || throw(ArgumentError(
         "EventDataBatch has reached its size limit: $(b.max_size_in_bytes)"))
     return b

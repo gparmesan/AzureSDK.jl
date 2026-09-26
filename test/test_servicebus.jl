@@ -208,6 +208,18 @@ bodies(msgs) = [body_as_str(m) for m in msgs]
             @test_throws ArgumentError get_queue_sender(client, "bad name")
         end
 
+        @testset "raw AMQP messages (AmqpAnnotatedMessage)" begin
+            s = get_queue_sender(client, "q")
+            r = get_queue_receiver(client, "q"; max_wait_time=2)
+            raw = AmqpAnnotatedMessage(body_type=:value, body=Dict{String,Any}("k" => 1),
+                application_properties=Dict{String,Any}("raw" => true))
+            send_messages(s, raw)
+            m = receive_messages(r)
+            @test m[1].body == Dict{Any,Any}("k" => 1) && m[1].application_properties["raw"] == true
+            @test m[1].raw_amqp_message.body_type === :value
+            complete_message(r, m[1])
+        end
+
         @testset "reconnect after connection loss" begin
             s = get_queue_sender(client, "q")
             r = get_queue_receiver(client, "q"; max_wait_time=2)

@@ -124,6 +124,8 @@ end
         @test [i["Body"] for i in items] == ["a", "b"] && items[1]["UserProperties"]["x"] == 1
         @test items[1]["BrokerProperties"]["PartitionKey"] == "pk"
         @test startswith(r.headers["authorization"], "SharedAccessSignature sr=")
+        send_event(p, AmqpAnnotatedMessage(Vector{UInt8}("raw")); partition_key="k2")
+        @test requests[end].body == "raw" && occursin("k2", requests[end].headers["brokerproperties"])
         send_event(p, EventData(UInt8[0xff, 0xfe]); partition_id="3")
         @test startswith(requests[end].target, "/hub/partitions/3/messages?")
         @test_throws ArgumentError get_eventhub_properties(p)
