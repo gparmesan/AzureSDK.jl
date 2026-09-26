@@ -151,11 +151,22 @@ function _receiver_link(r::ServiceBusReceiver; attach_timeout=nothing)
         timeout = something(attach_timeout, r.client.config.auth_timeout)
         props = r.session === nothing ? nothing :
                 Dict{Symbol,Any}(Symbol("com.microsoft:timeout") => UInt32(round(Int, min(timeout, 3600) * 1000)))
-        link = AMQP.attach_receiver(session, "SBReceiver-$(uuid4())", source;
-            prefetch=r.prefetch_count,
-            snd_settle_mode=peek_lock ? AMQP.SND_UNSETTLED : AMQP.SND_SETTLED,
-            rcv_settle_mode=peek_lock ? AMQP.RCV_SECOND : AMQP.RCV_FIRST,
-            properties=props, timeout=timeout)
+        link = try
+            AMQP.attach_receiver(session, "SBReceiver-$(uuid4())", source;
+                prefetch=r.prefetch_count,
+                snd_settle_mode=peek_lock ? AMQP.SND_UNSETTLED : AMQP.SND_SETTLED,
+                rcv_settle_mode=peek_lock ? AMQP.RCV_SECOND : AMQP.RCV_FIRST,
+                properties=props, timeout=timeout)
+        catch err
+            if r.session !== nothing && err isa AMQPException && err.condition == Symbol("com.microsoft:timeout")
+                # waiting longer (retrying) is the caller's decision
+                throw(OperationTimeoutError(r.session.session_id === nothing ?
+                    "No session became available within the timeout." :
+                    "Session $(repr(r.session.session_id)) could not be locked within the timeout."; error=err,
+                    condition=err.condition, retriable=false))
+            end
+            rethrow()
+        end
         if r.session !== nothing
             src = AMQP.remote_source(link)
             if src isa AMQP.Source && src.filter !== nothing

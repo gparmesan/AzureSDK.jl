@@ -202,9 +202,13 @@ end
             @test_throws A.AMQPException A.put_token(cbs, "sb://localhost/q", "tok")
             b.reject_tokens = false
             mgmt = A.open_management_link(s, "q/\$management")
-            resp = A.request(mgmt, A.AMQPMessage(body_type=:value, body=Dict{String,Any}("session-id" => "none"),
-                application_properties=Dict{String,Any}("operation" => "com.microsoft:get-session-state")))
-            @test A.response_status(resp)[1] == 200
+            # far more requests than the link's prefetch: credit must be replenished
+            statuses = [A.response_status(A.request(mgmt, A.AMQPMessage(body_type=:value,
+                body=Dict{String,Any}("session-id" => "none"),
+                application_properties=Dict{String,Any}("operation" => "com.microsoft:get-session-state")); timeout=5))[1]
+                        for _ in 1:150]
+            @test all(==(200), statuses)
+            @test all(==(202), [A.put_token(cbs, "sb://localhost/q", "tok"; timeout=5) for _ in 1:120])
             close(conn)
         end
 

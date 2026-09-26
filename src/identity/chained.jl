@@ -29,9 +29,15 @@ function EnvironmentCredential(; authority=nothing, kwargs...)
     elseif !isempty(tenant) && !isempty(client) && !isempty(env("AZURE_CLIENT_CERTIFICATE_PATH"))
         pw = env("AZURE_CLIENT_CERTIFICATE_PASSWORD")
         chain = lowercase(env("AZURE_CLIENT_SEND_CERTIFICATE_CHAIN")) in ("1", "true")
-        return EnvironmentCredential(ClientCertificateCredential(tenant, client, env("AZURE_CLIENT_CERTIFICATE_PATH");
+        cred = try
+            ClientCertificateCredential(tenant, client, env("AZURE_CLIENT_CERTIFICATE_PATH");
                 password=isempty(pw) ? nothing : pw, send_certificate_chain=chain, authority=authority,
-                additionally_allowed_tenants=allowed), "")
+                additionally_allowed_tenants=allowed)
+        catch err
+            return EnvironmentCredential(nothing,
+                "EnvironmentCredential: the certificate in AZURE_CLIENT_CERTIFICATE_PATH could not be loaded ($(sprint(showerror, err)))")
+        end
+        return EnvironmentCredential(cred, "")
     elseif !isempty(env("AZURE_USERNAME")) && !isempty(env("AZURE_PASSWORD"))
         return EnvironmentCredential(nothing,
             "EnvironmentCredential: username/password authentication is not supported by this package")

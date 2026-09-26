@@ -774,13 +774,17 @@ function _on_flow!(s::Session, f::Flow)
         else
             l = l::ReceiverLink
             l.available = something(f.available, UInt32(0))
-            if f.delivery_count !== nothing && f.link_credit !== nothing
-                # the sender's view is authoritative after all its transfers were processed
+            if l.draining && f.drain === true && f.delivery_count !== nothing
+                # drain completed: the sender used up or returned all credit
                 l.delivery_count = f.delivery_count
-                l.link_credit = f.link_credit
-            end
-            if l.draining && (f.drain === true || l.link_credit == 0)
+                l.link_credit = UInt32(0)
                 l.draining = false
+            elseif f.delivery_count !== nothing && serial_lt(l.delivery_count, f.delivery_count)
+                # the sender advanced its delivery count without transfers; the
+                # receiver's credit limit (delivery-count + link-credit) is unchanged
+                limit = l.delivery_count + l.link_credit
+                l.delivery_count = f.delivery_count
+                l.link_credit = serial_lt(l.delivery_count, limit) ? (limit - l.delivery_count) % UInt32 : UInt32(0)
             end
             f.echo === true && _session_flow(s; link=l)
             notify(l.cond)
@@ -1233,6 +1237,10 @@ function _on_transfer!(s::Session, t::Transfer, payload)
     d.settled || (l.unsettled[d.delivery_id] = d)
     if l.on_delivery !== nothing
         l.on_delivery(d)
+        # callback links never go through receive_delivery: replenish credit here
+        if l.prefetch > 0 && l.state === :attached && l.link_credit <= l.prefetch ÷ 2
+            _issue_credit!(l, UInt32(l.prefetch))
+        end
     else
         push!(l.queue, d)
     end

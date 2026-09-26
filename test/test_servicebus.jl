@@ -164,6 +164,10 @@ bodies(msgs) = [body_as_str(m) for m in msgs]
             rnext = get_queue_receiver(client, "sessions"; session_id=NEXT_AVAILABLE_SESSION, max_wait_time=1)
             gb = receive_messages(rnext)
             @test rnext.session.session_id == "B" && bodies(gb) == ["b1"]
+            # every session is locked now: a next-available receiver times out without retries
+            t = @elapsed @test_throws ServiceBus.OperationTimeoutError receive_messages(
+                get_queue_receiver(client, "sessions"; session_id=NEXT_AVAILABLE_SESSION, max_wait_time=1))
+            @test t < 5
             complete_message(rnext, gb[1])
             close(ra)
             close(rb)

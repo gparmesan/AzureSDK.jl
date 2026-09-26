@@ -245,6 +245,12 @@ end
                 @test env.credential isa ClientSecretCredential
                 @test startswith(get_token(env, "https://x/.default").token, "token-")
             end
+            withenv("AZURE_TENANT_ID" => TENANT, "AZURE_CLIENT_ID" => "c", "AZURE_CLIENT_SECRET" => nothing,
+                "AZURE_CLIENT_CERTIFICATE_PATH" => "/nonexistent/cert.pem") do
+                env = EnvironmentCredential()
+                @test env.credential === nothing
+                @test_throws CredentialUnavailableError get_token(env, "https://x/.default")
+            end
             withenv("AZURE_TENANT_ID" => nothing, "AZURE_CLIENT_ID" => nothing, "AZURE_CLIENT_SECRET" => nothing,
                 "AZURE_CLIENT_CERTIFICATE_PATH" => nothing, "AZURE_USERNAME" => nothing) do
                 @test_throws CredentialUnavailableError get_token(EnvironmentCredential(), "https://x/.default")
