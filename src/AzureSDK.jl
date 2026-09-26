@@ -17,6 +17,7 @@ include("identity/Identity.jl")
 include("messaging/Messaging.jl")
 include("eventhubs/EventHubs.jl")
 include("servicebus/ServiceBus.jl")
+include("precompile.jl")
 
 export AzureCore, AMQP, Identity, EventHubs, ServiceBus
 

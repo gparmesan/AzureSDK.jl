@@ -23,6 +23,7 @@ mutable struct ClientConnection
     token_provider::TokenProvider
     operation_timeout::Float64
     lock::ReentrantLock
+    cond::Threads.Condition
     conn::Union{Nothing,Connection}
     session::Union{Nothing,Session}
     cbs::Union{Nothing,ManagementLink}
@@ -36,8 +37,9 @@ function ClientConnection(tc::TransportConfig; hostname::AbstractString=tc.host,
     sasl_mechanism::Symbol=:anonymous, sasl_username=nothing, sasl_password=nothing,
     properties::Dict{Symbol,Any}=Dict{Symbol,Any}(), idle_timeout::Real=0.0,
     token_provider::TokenProvider=nothing, operation_timeout::Real=60.0)
+    lk = ReentrantLock()
     return ClientConnection(tc, String(hostname), sasl_mechanism, sasl_username, sasl_password, properties,
-        Float64(idle_timeout), token_provider, Float64(operation_timeout), ReentrantLock(), nothing, nothing,
+        Float64(idle_timeout), token_provider, Float64(operation_timeout), lk, Threads.Condition(lk), nothing, nothing,
         nothing, Dict{String,Float64}(), nothing, false, 0)
 end
 
@@ -137,13 +139,12 @@ end
 
 function _refresh_loop(cc::ClientConnection)
     while true
-        next = @lock cc.lock begin
-            cc.closed && return
-            isempty(cc.authorized) ? time() + 30.0 : minimum(values(cc.authorized))
-        end
-        sleep(clamp(next - time(), 0.5, 30.0))
         lock(cc.lock)
         try
+            cc.closed && return
+            next = isempty(cc.authorized) ? time() + 30.0 : minimum(values(cc.authorized))
+            # sleep until the next refresh is due, waking immediately on close
+            wait_until(() -> cc.closed, cc.cond, deadline_after(clamp(next - time(), 0.5, 30.0)))
             cc.closed && return
             _alive(cc) || continue   # reconnect re-authorizes lazily
             now = time()
@@ -176,6 +177,7 @@ function Base.close(cc::ClientConnection)
     conn = @lock cc.lock begin
         cc.closed && return nothing
         cc.closed = true
+        notify(cc.cond)
         c = cc.conn
         cc.conn = nothing
         cc.session = nothing

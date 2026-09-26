@@ -25,6 +25,7 @@ include("transport.jl")
 include("connection.jl")
 include("management.jl")
 include("client.jl")
+include("loopback.jl")
 
 export AMQPMessage, AMQPArray, AMQPDescribed, AMQPException, AMQPDecodeError
 

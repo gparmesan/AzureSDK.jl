@@ -108,7 +108,8 @@ read_exact(r::TransportReader, n::Int) = read_exact!(r, Vector{UInt8}(undef, n),
 How to reach an AMQP endpoint.
 
 - `scheme`: `:amqps` (TLS, default port 5671), `:amqp` (plain TCP, port 5672;
-  only for local emulators/tests) or `:wss` (AMQP over WebSockets, port 443).
+  only for local emulators/tests), `:wss` (AMQP over WebSockets, port 443) or
+  `:loopback` (in-process test peer, see `open_loopback`).
 - `verify_tls`: verify the server certificate and host name (never disable in
   production).
 - `ca_file`: optional custom CA bundle.
@@ -166,6 +167,7 @@ end
     open_transport(cfg::TransportConfig) -> AMQPTransport
 """
 function open_transport(cfg::TransportConfig)
+    cfg.scheme === :loopback && return open_loopback()
     host, port = _endpoint(cfg)
     timeout_ns = round(Int64, cfg.connect_timeout * 1e9)
     if cfg.scheme === :amqp

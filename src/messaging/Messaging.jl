@@ -168,6 +168,7 @@ struct ClientConfig
     auth_timeout::Float64
     user_agent::String
     component::String
+    scheme_override::Union{Nothing,Symbol}
 end
 
 function Base.show(io::IO, c::ClientConfig)
@@ -198,7 +199,7 @@ function ClientConfig(fully_qualified_namespace::AbstractString, credential, sco
     transport_type=TransportType.Amqp, port=nothing, use_development_emulator::Bool=false,
     custom_endpoint_address=nothing, http_proxy=nothing, connection_verify=true,
     retry_total::Integer=3, retry_backoff_factor::Real=0.8, retry_backoff_max::Real=120.0,
-    retry_mode=RetryMode.Exponential, auth_timeout::Real=60.0, user_agent=nothing)
+    retry_mode=RetryMode.Exponential, auth_timeout::Real=60.0, user_agent=nothing, _scheme=nothing)
     ns = _normalize_namespace(fully_qualified_namespace)
     host = first(split(ns, ':'))
     if occursin(':', ns) && port === nothing
@@ -217,13 +218,14 @@ function ClientConfig(fully_qualified_namespace::AbstractString, credential, sco
         custom_endpoint_address === nothing ? nothing : String(custom_endpoint_address), http_proxy,
         connection_verify isa AbstractString ? String(connection_verify) : Bool(connection_verify),
         retry_options(; retry_total, retry_backoff_factor, retry_backoff_max, retry_mode), Float64(auth_timeout),
-        ua, String(component))
+        ua, String(component), _scheme === nothing ? nothing : Symbol(_scheme))
 end
 
 "Create the (lazily connecting) AMQP connection for a client."
 function make_connection(cfg::ClientConfig)
     cfg.transport_type == TransportType.Http && throw(ArgumentError("AMQP connection requested for an HTTP client"))
-    scheme = cfg.use_emulator ? :amqp :
+    scheme = cfg.scheme_override !== nothing ? cfg.scheme_override :
+             cfg.use_emulator ? :amqp :
              cfg.transport_type == TransportType.AmqpOverWebsocket ? :wss : :amqps
     tc = TransportConfig(scheme=scheme, host=cfg.fully_qualified_namespace, port=cfg.port,
         verify_tls=cfg.connection_verify !== false,
