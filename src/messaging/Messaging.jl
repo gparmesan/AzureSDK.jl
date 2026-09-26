@@ -9,6 +9,7 @@ module Messaging
 
 using Dates
 import HTTP
+import Reseau
 import URIs
 
 using ..AzureCore
@@ -169,6 +170,7 @@ struct ClientConfig
     user_agent::String
     component::String
     scheme_override::Union{Nothing,Symbol}
+    http_client::Any          # HTTP.Client with custom TLS/proxy settings, or nothing
 end
 
 function Base.show(io::IO, c::ClientConfig)
@@ -218,7 +220,22 @@ function ClientConfig(fully_qualified_namespace::AbstractString, credential, sco
         custom_endpoint_address === nothing ? nothing : String(custom_endpoint_address), http_proxy,
         connection_verify isa AbstractString ? String(connection_verify) : Bool(connection_verify),
         retry_options(; retry_total, retry_backoff_factor, retry_backoff_max, retry_mode), Float64(auth_timeout),
-        ua, String(component), _scheme === nothing ? nothing : Symbol(_scheme))
+        ua, String(component), _scheme === nothing ? nothing : Symbol(_scheme),
+        _http_client(connection_verify, http_proxy))
+end
+
+"HTTP client honouring `connection_verify` (CA bundle path or `false`) and `http_proxy`."
+function _http_client(connection_verify, http_proxy)
+    (connection_verify === true && http_proxy === nothing) && return nothing
+    tls = if connection_verify isa AbstractString
+        Reseau.TLS.Config(ca_file=String(connection_verify))
+    elseif connection_verify === false
+        Reseau.TLS.Config(verify_peer=false)
+    else
+        nothing
+    end
+    proxy = http_proxy === nothing ? nothing : AMQP._proxy_config(http_proxy)
+    return HTTP.Client(transport=HTTP.Transport(tls_config=tls, proxy=proxy))
 end
 
 "Create the (lazily connecting) AMQP connection for a client."
@@ -231,7 +248,7 @@ function make_connection(cfg::ClientConfig)
         verify_tls=cfg.connection_verify !== false,
         ca_file=cfg.connection_verify isa String ? cfg.connection_verify : nothing,
         http_proxy=cfg.http_proxy, custom_endpoint_address=cfg.custom_endpoint_address,
-        connect_timeout=cfg.auth_timeout)
+        connect_timeout=cfg.auth_timeout, http_client=cfg.http_client)
     props = Dict{Symbol,Any}(:product => "azsdk-julia-$(cfg.component)", :version => AzureCore.PACKAGE_VERSION,
         :framework => "Julia/$(VERSION)", Symbol("user-agent") => cfg.user_agent)
     return ClientConnection(tc; hostname=cfg.fully_qualified_namespace, sasl_mechanism=:anonymous,

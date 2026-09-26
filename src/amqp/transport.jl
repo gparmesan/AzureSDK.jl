@@ -130,6 +130,7 @@ Base.@kwdef struct TransportConfig
     http_proxy::Any = nothing
     custom_endpoint_address::Union{Nothing,String} = nothing
     websocket_path::String = "/\$servicebus/websocket"
+    http_client::Any = nothing       # HTTP.Client for the WebSocket handshake (custom CA / proxy)
 end
 
 default_port(scheme::Symbol) = scheme === :amqps ? 5671 : scheme === :amqp ? 5672 : 443
@@ -194,8 +195,13 @@ function open_transport(cfg::TransportConfig)
             :redirect => false,
             :cookies => false,
         )
-        proxy = _proxy_config(cfg.http_proxy)
-        proxy !== nothing && (kwargs[:proxy] = proxy)
+        if cfg.http_client !== nothing
+            delete!(kwargs, :require_ssl_verification)
+            kwargs[:client] = cfg.http_client
+        else
+            proxy = _proxy_config(cfg.http_proxy)
+            proxy !== nothing && (kwargs[:proxy] = proxy)
+        end
         if cfg.custom_endpoint_address !== nothing
             kwargs[:headers] = ["Host" => cfg.host]
         end

@@ -40,7 +40,7 @@ end
 """
     send_request(method, url; headers=[], body=nothing, retry=RetryOptions(), timeout=30,
                  connect_timeout=min(timeout, 30), retry_status_codes=RETRY_STATUS_CODES,
-                 retry_on_connection_error=true, proxy=nothing) -> HTTP.Response
+                 retry_on_connection_error=true, proxy=nothing, client=nothing) -> HTTP.Response
 
 Send an HTTP request and return the final response (any status). Transient
 failures are retried according to `retry`. Connection failures after the last
@@ -50,11 +50,15 @@ function send_request(method::AbstractString, url::AbstractString;
     headers=Pair{String,String}[], body=nothing, retry::RetryOptions=RetryOptions(),
     timeout::Real=30.0, connect_timeout::Real=min(timeout, 30.0),
     retry_status_codes=RETRY_STATUS_CODES, retry_on_connection_error::Bool=true,
-    proxy=nothing, max_retry_after::Real=60.0)
+    proxy=nothing, client=nothing, max_retry_after::Real=60.0)
     attempt = 0
     kwargs = Dict{Symbol,Any}(:retry => false, :status_exception => false, :redirect => false,
         :cookies => false, :connect_timeout => connect_timeout, :request_timeout => timeout)
-    proxy === nothing || (kwargs[:proxy] = proxy)
+    if client !== nothing
+        kwargs[:client] = client        # carries TLS (custom CA) and proxy settings
+    elseif proxy !== nothing
+        kwargs[:proxy] = proxy
+    end
     while true
         resp = try
             HTTP.request(method, url, headers, body === nothing ? UInt8[] : body; kwargs...)

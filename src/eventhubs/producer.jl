@@ -249,7 +249,7 @@ function _http_post(url, auth, content_type, body, cfg::ClientConfig, extra_head
     headers = vcat(Pair{String,String}["Authorization" => auth, "Content-Type" => content_type,
             "User-Agent" => cfg.user_agent], extra_headers)
     resp = AzureCore.send_request("POST", url; headers=headers, body=body, retry=RetryOptions(retry_total=0),
-        timeout=60.0, proxy=cfg.http_proxy === nothing ? nothing : AMQP._proxy_config(cfg.http_proxy))
+        timeout=60.0, client=cfg.http_client)
     resp.status in (200, 201) && return resp
     cond = resp.status == 401 || resp.status == 403 ? Symbol("amqp:unauthorized-access") :
            resp.status == 404 ? Symbol("amqp:not-found") :

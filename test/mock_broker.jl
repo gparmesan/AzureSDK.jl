@@ -86,6 +86,7 @@ mutable struct MConn
     sessions::Dict{UInt16,MSession}   # by remote channel
     max_frame_size::UInt32            # client's
     closed::Bool
+    heartbeats::Int
 end
 
 Base.@kwdef mutable struct Broker
@@ -95,9 +96,12 @@ Base.@kwdef mutable struct Broker
     listener::Any = nothing
     tls_listener::Any = nothing
     ws_server::Any = nothing
+    wss_server::Any = nothing
+    idle_timeout_ms::Int = 60_000
     port::Int = 0
     tls_port::Int = 0
     ws_port::Int = 0
+    wss_port::Int = 0
     conns::Vector{MConn} = MConn[]
     tasks::Vector{Task} = Task[]
     max_frame_size::UInt32 = UInt32(64 * 1024)
@@ -141,7 +145,7 @@ end
 # ---------------------------------------------------------------------------
 
 function serve_connection(b::Broker, t::A.AMQPTransport)
-    c = MConn(b, t, A.TransportReader(t), ReentrantLock(), Dict{UInt16,MSession}(), UInt32(1024 * 1024), false)
+    c = MConn(b, t, A.TransportReader(t), ReentrantLock(), Dict{UInt16,MSession}(), UInt32(1024 * 1024), false, 0)
     @lock b.lock push!(b.conns, c)
     try
         hdr = A.read_exact(c.reader, 8)
@@ -161,10 +165,13 @@ function serve_connection(b::Broker, t::A.AMQPTransport)
         f.body isa A.Open || return
         c.max_frame_size = something(f.body.max_frame_size, UInt32(1024 * 1024))
         send!(c, A.Open(container_id="mock-broker", max_frame_size=b.max_frame_size, channel_max=UInt16(255),
-            idle_time_out=UInt32(60_000)))
+            idle_time_out=UInt32(b.idle_timeout_ms)))
         while !c.closed
             f = read_frame(c)
-            f.body === nothing && continue
+            if f.body === nothing
+                c.heartbeats += 1
+                continue
+            end
             @lock b.lock handle!(b, c, f)
         end
     catch err
@@ -725,6 +732,14 @@ function start!(b::Broker; tls_cert=nothing, tls_key=nothing, websocket::Bool=fa
             serve_connection(b, A.WebSocketTransport(ws, UInt8[], 1, "ws-server"))
         end
         b.ws_port = parse(Int, split(HTTP.WebSockets.server_addr(b.ws_server), ':')[end])
+        if tls_cert !== nothing
+            cfg = Reseau.TLS.Config(cert_file=tls_cert, key_file=tls_key)
+            b.wss_server = HTTP.WebSockets.listen!("127.0.0.1", 0; listenany=true, subprotocols=["AMQPWSB10"],
+                tls_config=cfg) do ws
+                serve_connection(b, A.WebSocketTransport(ws, UInt8[], 1, "wss-server"))
+            end
+            b.wss_port = parse(Int, split(HTTP.WebSockets.server_addr(b.wss_server), ':')[end])
+        end
     end
     return b
 end
@@ -753,6 +768,7 @@ function stop!(b::Broker)
     try close(b.listener) catch end
     b.tls_listener === nothing || try close(b.tls_listener) catch end
     b.ws_server === nothing || try HTTP.WebSockets.forceclose(b.ws_server) catch end
+    b.wss_server === nothing || try HTTP.WebSockets.forceclose(b.wss_server) catch end
     for c in copy(b.conns)
         c.closed = true
         close(c.transport)

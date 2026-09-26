@@ -27,7 +27,7 @@ function _http_do(h::ServiceBusHandler, method::AbstractString, url::AbstractStr
     cfg = h.client.config
     hdrs = vcat(Pair{String,String}["Authorization" => _http_auth(h), "User-Agent" => cfg.user_agent], headers)
     resp = AzureCore.send_request(method, url; headers=hdrs, body=body, retry=RetryOptions(retry_total=0),
-        timeout=timeout, proxy=cfg.http_proxy === nothing ? nothing : AMQP._proxy_config(cfg.http_proxy))
+        timeout=timeout, client=cfg.http_client)
     (resp.status in ok || resp.status == 204) && return resp
     cond = resp.status in (401, 403) ? Symbol("amqp:unauthorized-access") :
            resp.status == 404 ? Symbol("amqp:not-found") :

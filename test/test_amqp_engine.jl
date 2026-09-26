@@ -150,6 +150,49 @@ end
             close(conn)
         end
 
+        @testset "secure WebSocket with a custom CA through the Service Bus client" begin
+            cred = AzureSDK.AzureCore.AzureNamedKeyCredential("RootManageSharedAccessKey", "secret")
+            client = AzureSDK.ServiceBus.ServiceBusClient("localhost:$(b.wss_port)", cred;
+                transport_type=AzureSDK.ServiceBus.TransportType.AmqpOverWebsocket,
+                connection_verify=joinpath(dir, "cert.pem"), retry_total=0)
+            @test client.conn.transport_config.scheme === :wss
+            AzureSDK.ServiceBus.send_messages(AzureSDK.ServiceBus.get_queue_sender(client, "q"),
+                AzureSDK.ServiceBus.ServiceBusMessage("over wss"))
+            close(client)
+            # without the CA the handshake fails and is not retried
+            client = AzureSDK.ServiceBus.ServiceBusClient("localhost:$(b.wss_port)", cred;
+                transport_type=AzureSDK.ServiceBus.TransportType.AmqpOverWebsocket)
+            @test_throws AzureSDK.AzureCore.AzureError AzureSDK.ServiceBus.send_messages(
+                AzureSDK.ServiceBus.get_queue_sender(client, "q"), AzureSDK.ServiceBus.ServiceBusMessage("x"))
+            close(client)
+        end
+
+        @testset "heartbeats keep idle connections alive" begin
+            b.idle_timeout_ms = 1000
+            conn = raw_connection(b)
+            @test conn.remote_idle_timeout == 1.0
+            sleep(2.5)
+            @test isopen(conn)
+            mc = only(filter(c -> !c.closed, b.conns))
+            @test mc.heartbeats >= 3
+            close(conn)
+            b.idle_timeout_ms = 60_000
+        end
+
+        @testset "CBS tokens are refreshed before they expire" begin
+            issued = Ref(0)
+            provider = aud -> (issued[] += 1; ("token-$(issued[])", "jwt", time() + 2.0))
+            cc = A.ClientConnection(A.TransportConfig(scheme=:amqp, host="localhost", port=b.port);
+                hostname="localhost", token_provider=provider)
+            A.authorize!(cc, "sb://localhost/q")
+            @test issued[] == 1
+            @test timedwait(() -> issued[] >= 3, 10.0) === :ok
+            close(cc)
+            n = issued[]
+            sleep(1.5)
+            @test issued[] == n          # the refresher stops with the connection
+        end
+
         @testset "CBS put-token and management request/response" begin
             conn = raw_connection(b)
             s = A.begin_session(conn)
