@@ -17,7 +17,7 @@ Base.@kwdef mutable struct AMQPMessage
     delivery_annotations::Union{Nothing,Dict{Any,Any}} = nothing
     message_annotations::Union{Nothing,Dict{Any,Any}} = nothing
     properties::Union{Nothing,Properties} = nothing
-    application_properties::Union{Nothing,Dict{String,Any}} = nothing
+    application_properties::Union{Nothing,AbstractDict{String,Any}} = nothing
     body_type::Symbol = :data
     body::Any = Vector{UInt8}[]
     footer::Union{Nothing,Dict{Any,Any}} = nothing

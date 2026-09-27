@@ -13,8 +13,10 @@ client = ServiceBusClient(ns, cred;
 `TransportType.Http` uses the services' REST APIs. It supports Event Hubs
 publishing, and for Service Bus sending, receiving (peek-lock and
 receive-and-delete), complete, abandon and lock renewal. Everything else needs
-AMQP. Over HTTP, application property names are case-insensitive, because they
-travel as HTTP headers.
+AMQP. Over HTTP, application properties travel as HTTP headers, whose names
+lose their original case. Messages received over HTTP therefore return
+`application_properties` as a `CaseInsensitiveDict`, so `props["myProp"]` works
+whatever case the name arrives in.
 
 ## Performance
 

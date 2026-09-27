@@ -9,9 +9,24 @@ using Dates
 using Test
 import UUIDs
 
+# AZURESDK_AZURITE_CONNECTION_STRING points the suite at another account (with
+# an account key), e.g. a real storage account.
 const AZURITE_CONN = get(ENV, "AZURESDK_AZURITE_CONNECTION_STRING", "UseDevelopmentStorage=true")
-const AZURITE_URL = "http://127.0.0.1:10000/devstoreaccount1"
-const AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+const AZURITE_URL, AZURITE_ACCOUNT, AZURITE_KEY = let (url, cred) = AzureSDK.Storage.parse_storage_connection_string(AZURITE_CONN)
+    nk = AzureSDK.AzureCore.named_key(cred)
+    url, nk.name, nk.key
+end
+const AZURITE_LOCAL = startswith(AZURITE_URL, "http://")
+
+"Poll `f` until it returns true (Azure updates some indexes, e.g. blob tags, asynchronously)."
+function eventually(f; timeout=60)
+    t0 = time()
+    while !f()
+        time() - t0 > timeout && return false
+        sleep(2)
+    end
+    return true
+end
 
 _uniq(prefix) = string(prefix, "-", lowercase(string(rand(UInt32); base=36)), lowercase(string(rand(UInt32); base=36)))
 
@@ -23,14 +38,14 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
                                                create_container(svc, name; kwargs...))
         try
             @testset "clients and URLs" begin
-                @test svc.account_name == "devstoreaccount1"
+                @test svc.account_name == AZURITE_ACCOUNT
                 @test svc.primary_endpoint == AZURITE_URL
                 @test !occursin(AZURITE_KEY, repr(svc)) && !occursin(AZURITE_KEY, repr(svc.credential))
                 cc = from_connection_string(ContainerClient, AZURITE_CONN, "abc")
                 @test cc.url == AZURITE_URL * "/abc"
                 bc = from_connection_string(BlobClient, AZURITE_CONN, "abc", "d/e f.txt")
                 @test bc.url == AZURITE_URL * "/abc/d/e%20f.txt"
-                bc2 = from_blob_url(bc.url; credential=AzureNamedKeyCredential("devstoreaccount1", AZURITE_KEY))
+                bc2 = from_blob_url(bc.url; credential=AzureNamedKeyCredential(AZURITE_ACCOUNT, AZURITE_KEY))
                 @test bc2.container_name == "abc" && bc2.blob_name == "d/e f.txt"
                 @test from_container_url(cc.url).container_name == "abc"
                 # account key given as a plain string (Python semantics)
@@ -93,19 +108,23 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
                 exp = Dates.now(Dates.UTC) + Dates.Hour(1)
                 set_container_access_policy(cc, Dict("read" => AccessPolicy(permission=ContainerSasPermissions(read=true, list=true),
                         expiry=exp, start=Dates.now(Dates.UTC) - Dates.Minute(5)),
-                    "write" => AccessPolicy(permission="w", expiry=exp)); public_access=PublicAccess.BLOB)
+                    "write" => AccessPolicy(permission="w", expiry=exp));
+                    # new Azure accounts disallow anonymous access, so only Azurite tests public containers
+                    public_access=AZURITE_LOCAL ? PublicAccess.BLOB : nothing)
                 acl = get_container_access_policy(cc)
-                @test acl["public_access"] == PublicAccess.BLOB
+                @test acl["public_access"] == (AZURITE_LOCAL ? PublicAccess.BLOB : nothing)
                 ids = Dict(si.id => si.access_policy for si in acl["signed_identifiers"])
                 @test sort(collect(keys(ids))) == ["read", "write"]
                 @test ids["read"].permission == "rl"
                 @test abs(ids["read"].expiry - floor(exp, Dates.Second)) < Dates.Second(2)
                 @test_throws ArgumentError set_container_access_policy(cc, Dict(string(i) => AccessPolicy() for i in 1:6))
                 # anonymous read of a blob in a public container
-                upload_blob(cc, "public.txt", "anyone can read")
-                anon = BlobClient(AZURITE_URL, cc.container_name, "public.txt")
-                @test anon.credential === nothing
-                @test String(readall(download_blob(anon))) == "anyone can read"
+                if AZURITE_LOCAL
+                    upload_blob(cc, "public.txt", "anyone can read")
+                    anon = BlobClient(AZURITE_URL, cc.container_name, "public.txt")
+                    @test anon.credential === nothing
+                    @test String(readall(download_blob(anon))) == "anyone can read"
+                end
             end
 
             @testset "upload and download" begin
@@ -272,10 +291,11 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
                 @test get_blob_tags(bc2) == Dict("project" => "beta")
                 tagged = collect(list_blobs(cc; include=["tags"]))
                 @test Dict(b.name => b.tags for b in tagged)["p.txt"]["project"] == "alpha"
+                @test eventually(() -> !isempty(collect(find_blobs_by_tags(cc, "\"project\"='alpha'"))))
                 found = collect(find_blobs_by_tags(cc, "\"project\"='alpha'"))
                 @test [f.name for f in found] == ["p.txt"]
                 @test found[1].container_name == cc.container_name
-                @test length(collect(find_blobs_by_tags(svc, "\"project\"='beta'"))) >= 1
+                @test eventually(() -> !isempty(collect(find_blobs_by_tags(svc, "\"project\"='beta'"))))
                 @test get_blob_properties(bc; if_tags_match_condition="\"project\"='alpha'").name == "p.txt"
                 @test_throws ResourceModifiedError get_blob_properties(bc; if_tags_match_condition="\"project\"='zeta'")
                 set_blob_tags(bc)
@@ -464,7 +484,7 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
                 upload_blob(cc, "secret.txt", "classified")
                 exp = Dates.now(Dates.UTC) + Dates.Hour(1)
                 # account SAS
-                tok = generate_account_sas("devstoreaccount1", AZURITE_KEY, ResourceTypes(service=true, container=true, object=true),
+                tok = generate_account_sas(AZURITE_ACCOUNT, AZURITE_KEY, ResourceTypes(service=true, container=true, object=true),
                     AccountSasPermissions(read=true, list=true), exp)
                 @test occursin("sig=", tok) && occursin("sv=", tok)
                 sas_svc = BlobServiceClient(AZURITE_URL * "?" * tok)
@@ -480,7 +500,7 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
                 @test_throws ArgumentError BlobServiceClient(AZURITE_URL * "?" * tok; credential=cred)
 
                 # container SAS
-                ctok = generate_container_sas("devstoreaccount1", cc.container_name; account_key=AZURITE_KEY,
+                ctok = generate_container_sas(AZURITE_ACCOUNT, cc.container_name; account_key=AZURITE_KEY,
                     permission=ContainerSasPermissions(read=true, list=true, write=true, create=true), expiry=exp)
                 ccs = from_container_url(cc.url * "?" * ctok)
                 @test [b.name for b in list_blobs(ccs)] == ["secret.txt"]
@@ -489,7 +509,7 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
                 @test_throws ClientAuthenticationError delete_blob(ccs, "via-sas.txt")
 
                 # blob SAS (read only, with response header overrides)
-                btok = generate_blob_sas("devstoreaccount1", cc.container_name, "secret.txt"; account_key=AZURITE_KEY,
+                btok = generate_blob_sas(AZURITE_ACCOUNT, cc.container_name, "secret.txt"; account_key=AZURITE_KEY,
                     permission=BlobSasPermissions(read=true), expiry=Dates.Hour(1), content_type="text/x-custom",
                     protocol="https,http")
                 bsc = from_blob_url(get_blob_client(cc, "secret.txt").url * "?" * btok)
@@ -501,19 +521,19 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
 
                 # stored access policy
                 set_container_access_policy(cc, Dict("readers" => AccessPolicy(permission="rl", expiry=exp)))
-                ptok = generate_container_sas("devstoreaccount1", cc.container_name; account_key=AZURITE_KEY,
+                ptok = generate_container_sas(AZURITE_ACCOUNT, cc.container_name; account_key=AZURITE_KEY,
                     policy_id="readers")
                 @test length(collect(list_blobs(from_container_url(cc.url * "?" * ptok)))) == 2
 
                 # snapshot SAS
                 snap = create_snapshot(get_blob_client(cc, "secret.txt"))["snapshot"]
-                stok = generate_blob_sas("devstoreaccount1", cc.container_name, "secret.txt"; snapshot=snap,
+                stok = generate_blob_sas(AZURITE_ACCOUNT, cc.container_name, "secret.txt"; snapshot=snap,
                     account_key=AZURITE_KEY, permission="r", expiry=exp)
                 ssc = BlobClient(AZURITE_URL, cc.container_name, "secret.txt"; snapshot=snap, credential=stok)
                 @test String(readall(download_blob(ssc))) == "classified"
 
                 # expired and tampered tokens
-                old = generate_blob_sas("devstoreaccount1", cc.container_name, "secret.txt"; account_key=AZURITE_KEY,
+                old = generate_blob_sas(AZURITE_ACCOUNT, cc.container_name, "secret.txt"; account_key=AZURITE_KEY,
                     permission="r", expiry=Dates.now(Dates.UTC) - Dates.Hour(1))
                 @test_throws ClientAuthenticationError download_blob(BlobClient(AZURITE_URL, cc.container_name,
                     "secret.txt"; credential=old))
@@ -562,7 +582,7 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
             end
 
             @testset "errors" begin
-                bad = BlobServiceClient(AZURITE_URL; credential=AzureNamedKeyCredential("devstoreaccount1",
+                bad = BlobServiceClient(AZURITE_URL; credential=AzureNamedKeyCredential(AZURITE_ACCOUNT,
                     "AAAA" * AZURITE_KEY[5:end]))
                 err = try
                     collect(list_containers(bad))
@@ -580,7 +600,8 @@ if get(ENV, "AZURESDK_AZURITE", "") == "1"
                     e
                 end
                 @test e2 isa ResourceNotFoundError && e2.error_code == StorageErrorCode.blob_not_found
-                @test_throws ArgumentError upload_blob(get_blob_client(svc, created[1], "cpk"), "x";
+                # customer-provided keys are refused over plain HTTP
+                AZURITE_LOCAL && @test_throws ArgumentError upload_blob(get_blob_client(svc, created[1], "cpk"), "x";
                     cpk=CustomerProvidedEncryptionKey(rand(UInt8, 32)))
                 # unreachable endpoint -> ServiceRequestError after retries
                 dead = BlobServiceClient("http://127.0.0.1:9/devstoreaccount1"; credential=AZURITE_KEY, retry_total=1,

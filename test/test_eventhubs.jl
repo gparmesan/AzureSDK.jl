@@ -141,7 +141,11 @@ end
 # test/emulator/docker-compose.yml.
 # ---------------------------------------------------------------------------
 
-const EMULATOR_CS = "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+# AZURESDK_EVENTHUBS_CONNECTION_STRING points the suite at another namespace
+# (e.g. a real one with the entities of test/emulator/eventhubs-config.json).
+const EMULATOR_CS = get(ENV, "AZURESDK_EVENTHUBS_CONNECTION_STRING",
+    "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;")
+const EMULATOR_FQNS = EventHubs.parse_connection_string(EMULATOR_CS).fully_qualified_namespace
 
 if get(ENV, "AZURESDK_EVENTHUBS_EMULATOR", "") == "1"
     @testset "Event Hubs (emulator)" begin
@@ -192,9 +196,9 @@ if get(ENV, "AZURESDK_EVENTHUBS_EMULATOR", "") == "1"
                 end; starting_position="-1", max_batch_size=4, max_wait_time=2)
             @test timedwait(() -> istaskdone(task), 90.0) === :ok
             @test sort(seen) == sort(["$marker-$i" for i in 1:11])
-            cps = list_checkpoints(store, "localhost", "eh1", "cg1")
+            cps = list_checkpoints(store, EMULATOR_FQNS, "eh1", "cg1")
             @test any(cp -> cp["partition_id"] == "1", cps)
-            own = list_ownership(store, "localhost", "eh1", "cg1")
+            own = list_ownership(store, EMULATOR_FQNS, "eh1", "cg1")
             @test all(o -> o["owner_id"] == "", own)      # relinquished on close
         end
 
@@ -210,7 +214,8 @@ if get(ENV, "AZURESDK_EVENTHUBS_EMULATOR", "") == "1"
 
         if get(ENV, "AZURESDK_AZURITE", "1") == "1"
             @testset "BlobCheckpointStore (Azurite)" begin
-                store = from_connection_string(BlobCheckpointStore, "UseDevelopmentStorage=true", "ehcheckpoints")
+                store = from_connection_string(BlobCheckpointStore,
+                    get(ENV, "AZURESDK_AZURITE_CONNECTION_STRING", "UseDevelopmentStorage=true"), "ehcheckpoints")
                 AzureSDK.Storage.Blob.exists(store.container) || AzureSDK.Storage.Blob.create_container(store.container)
 
                 # two consumers share eh2's four partitions through the blob store

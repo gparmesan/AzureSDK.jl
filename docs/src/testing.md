@@ -32,6 +32,24 @@ emulator (and SQL Server) license terms. Those emulators do not validate SAS
 keys and do not support TLS or WebSockets, so those paths are covered by the
 mock broker. Azurite does validate Shared Key and SAS signatures.
 
+## Testing against real Azure
+
+The emulator suites can also run against real Azure resources.
+`AZURESDK_EVENTHUBS_CONNECTION_STRING`, `AZURESDK_SERVICEBUS_CONNECTION_STRING`
+and `AZURESDK_AZURITE_CONNECTION_STRING` (a storage account connection string
+with an account key) replace the emulator connection strings. The namespaces
+need the entities from `test/emulator/eventhubs-config.json` and
+`test/emulator/servicebus-config.json`.
+
+`test/test_live.jl` (enabled with `AZURESDK_LIVE=1`) covers what the emulators
+cannot: Entra ID credentials (`DefaultAzureCredential` and optionally a service
+principal with a secret or certificate), AMQP over TLS and WebSockets, the HTTP
+transport, SAS token credentials and user delegation SAS. The comment at the
+top of the file lists its environment variables. The resources it needs are
+billed while they exist, so delete them when you are done.
+
+## Continuous integration
+
 In CI, the Azurite tests run on every push. The Event Hubs and Service Bus
 emulator jobs run only when the repository variable `ACCEPT_EMULATOR_EULA` is
 set to `Y`.

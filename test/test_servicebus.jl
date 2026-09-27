@@ -335,8 +335,10 @@ end
         @test length(queue) == 3
         r = get_queue_receiver(client, "q"; max_wait_time=2)
         m = receive_messages(r)
-        # HTTP header names are case-insensitive; HTTP.jl returns them in canonical form
-        @test bodies(m) == ["single"] && m[1].message_id == "m1" && m[1].application_properties["Prop"] == 5
+        # HTTP header names are case-insensitive; HTTP.jl returns them in canonical form,
+        # so received application properties are looked up case-insensitively
+        @test bodies(m) == ["single"] && m[1].message_id == "m1" && m[1].application_properties["prop"] == 5
+        @test m[1].application_properties["Prop"] == 5 && m[1].application_properties isa CaseInsensitiveDict
         @test m[1].sequence_number == 1 && m[1].lock_token isa UUID
         @test renew_message_lock(r, m[1]) == DateTime(2039, 11, 6, 9)
         complete_message(r, m[1])

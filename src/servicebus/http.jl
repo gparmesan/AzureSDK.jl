@@ -119,7 +119,9 @@ function _http_received(r::ServiceBusReceiver, resp)
         group_id=get(bp, "SessionId", nothing), subject=get(bp, "Label", nothing), reply_to=get(bp, "ReplyTo", nothing),
         to=get(bp, "To", nothing), reply_to_group_id=get(bp, "ReplyToSessionId", nothing),
         content_type=isempty(ct) ? nothing : AMQP.wire_symbol(ct))
-    app = Dict{String,Any}()
+    # Application properties travel as HTTP headers, whose name case HTTP.jl
+    # does not preserve, so they are looked up case-insensitively.
+    app = CaseInsensitiveDict{Any}()
     for (k, v) in resp.headers
         lowercase(k) in _STANDARD_HEADERS && continue
         app[k] = try
