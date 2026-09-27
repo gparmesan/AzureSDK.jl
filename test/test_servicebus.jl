@@ -355,7 +355,20 @@ end
         @test bodies(receive_messages(rd)) == ["rd"]
         @test isempty(receive_messages(rd; max_wait_time=0.5))
         @test_throws ArgumentError peek_messages(r)
+        # lock URLs must match the namespace endpoint's scheme, host and port
+        @test ServiceBus._check_location(r, "http://localhost:$(port[])/q/messages/1/x") === nothing
+        for bad in ("https://localhost:$(port[])/q/messages/1/x", "http://localhost:1/q/messages/1/x",
+            "http://evil.example:$(port[])/q/messages/1/x", "http://localhost/q/messages/1/x")
+            @test_throws ServiceBusServiceError ServiceBus._check_location(r, bad)
+        end
         close(client)
+        prod = ServiceBusClient("ns.servicebus.windows.net", AzureNamedKeyCredential("n", "k");
+            transport_type=TransportType.Http)
+        pr = get_queue_receiver(prod, "q")
+        @test ServiceBus._check_location(pr, "https://ns.servicebus.windows.net/q/messages/1/x") === nothing
+        @test ServiceBus._check_location(pr, "https://NS.servicebus.windows.net:443/q/messages/1/x") === nothing
+        @test_throws ServiceBusServiceError ServiceBus._check_location(pr, "http://ns.servicebus.windows.net/q/messages/1/x")
+        close(prod)
     finally
         HTTP.forceclose(server)
     end

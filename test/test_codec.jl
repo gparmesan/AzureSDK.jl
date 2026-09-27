@@ -111,4 +111,26 @@ using Dates, UUIDs, Test
         @test_throws A.AMQPDecodeError A.decode(A.encode(nested))
         @test_throws A.AMQPDecodeError A.decode_message(UInt8[0x00, 0x53, 0x75, 0x41])  # data section not binary
     end
+
+    @testset "symbols from the wire are interned within a budget" begin
+        sym8(s) = vcat(UInt8[A.TC_SYM8, sizeof(s)], codeunits(s))   # built by hand: never interns `s`
+        @test_throws A.AMQPDecodeError A.decode(sym8("a\0b"))
+        saved = (A._new_wire_symbols[], A._new_wire_symbol_bytes[])
+        try
+            fresh = "wire-symbol-" * string(rand(UInt64); base=16)
+            @test A._existing_symbol(fresh) === nothing
+            @test A.decode(sym8(fresh)) === Symbol(fresh)
+            @test A._new_wire_symbols[] == saved[1] + 1
+            A._new_wire_symbols[] = A.MAX_NEW_WIRE_SYMBOLS
+            # symbols that already exist are still decoded once the budget is spent ...
+            @test A.decode(sym8("amqp:not-found")) === Symbol("amqp:not-found")
+            @test A.decode(sym8(fresh)) === Symbol(fresh)
+            # ... new ones are refused without being interned
+            other = "wire-symbol-" * string(rand(UInt64); base=16) * "x"
+            @test_throws A.AMQPDecodeError A.decode(sym8(other))
+            @test A._existing_symbol(other) === nothing
+        finally
+            A._new_wire_symbols[], A._new_wire_symbol_bytes[] = saved
+        end
+    end
 end

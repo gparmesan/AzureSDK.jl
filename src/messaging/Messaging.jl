@@ -97,8 +97,7 @@ function parse_messaging_connection_string(conn_str::AbstractString)
         throw(ArgumentError("Invalid connection string: SharedAccessKeyName and SharedAccessKey are required (or SharedAccessSignature)."))
     end
     emulator = lowercase(get(d, "usedevelopmentemulator", "false")) == "true"
-    if emulator && !(u.host in ("localhost", "127.0.0.1", "::1") || endswith(u.host, ".localhost") ||
-                     endswith(u.host, ".test") || !occursin('.', u.host))
+    if emulator && !AzureCore.is_dev_host(u.host)
         throw(ArgumentError("UseDevelopmentEmulator may only be used with a local endpoint"))
     end
     entity = get(d, "entitypath", nothing)
@@ -211,6 +210,13 @@ function ClientConfig(fully_qualified_namespace::AbstractString, credential, sco
         port = parse(Int, split(ns, ':')[2])
     end
     tt = _transport_type(transport_type)
+    if use_development_emulator
+        # The emulator is reached over unencrypted AMQP/HTTP.
+        AzureCore.is_dev_host(host) ||
+            throw(ArgumentError("use_development_emulator may only be used with a local endpoint"))
+        credential isa TokenCredential && !AzureCore.is_local_host(host) &&
+            throw(ArgumentError("token credentials may only be sent unencrypted to a loopback host"))
+    end
     use_development_emulator && tt == TransportType.AmqpOverWebsocket &&
         throw(ArgumentError("the development emulator does not support AMQP over WebSockets"))
     http_proxy !== nothing && tt == TransportType.Amqp &&

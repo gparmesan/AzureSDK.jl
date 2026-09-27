@@ -149,9 +149,26 @@ function http_client(connection_verify, http_proxy)
     return HTTP.Client(transport=HTTP.Transport(tls_config=tls, proxy=proxy_config(http_proxy)))
 end
 
-"True for loopback / development hosts where plain HTTP is acceptable."
+"""
+    is_local_host(host) -> Bool
+
+True only for loopback hosts: `localhost`, `*.localhost`, an IPv4 address in
+127.0.0.0/8 or `::1`. These are the only hosts that may receive credentials
+over plain (unencrypted) connections.
+"""
 function is_local_host(host::AbstractString)
     h = lowercase(strip(host, ['[', ']']))
-    return h in ("localhost", "127.0.0.1", "::1") || startswith(h, "127.") || endswith(h, ".localhost") ||
-           endswith(h, ".test") || !occursin(r"[.:]", h)
+    (h == "localhost" || endswith(h, ".localhost") || h in ("::1", "0:0:0:0:0:0:0:1")) && return true
+    m = match(r"^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$", h)
+    return m !== nothing && all(x -> parse(Int, x) <= 255, m.captures)
 end
+
+"""
+    is_dev_host(host) -> Bool
+
+True for hosts where a local emulator may run: loopback hosts (see
+[`is_local_host`](@ref)) and single-label names such as docker-compose service
+names (`azurite`). Plain connections to these are acceptable with emulator
+keys, but never with Entra ID tokens, which only `is_local_host` permits.
+"""
+is_dev_host(host::AbstractString) = is_local_host(host) || occursin(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", lowercase(host))

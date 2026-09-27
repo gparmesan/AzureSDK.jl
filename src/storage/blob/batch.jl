@@ -90,12 +90,25 @@ function _sub_error_code(p::BatchSubResponse)
     return p.reason
 end
 
+# The multipart body is assembled here, not by HTTP.jl, so its header checks
+# do not apply: refuse line breaks, which would inject headers or lines into
+# a sub-request. Values are not echoed (they may hold credentials).
+function _check_batch_line(what, s::AbstractString)
+    occursin(r"[\r\n]", s) && throw(ArgumentError("batch sub-request $(what) contains a line break"))
+    return s
+end
+
 function _send_batch(c::ContainerClient, subrequests, names; raise_on_any_failure::Bool=true, timeout=nothing)
     isempty(subrequests) && return BatchSubResponse[]
     length(subrequests) > MAX_BATCH && throw(ArgumentError("a batch can contain at most $(MAX_BATCH) sub-requests"))
     boundary = "batch_" * string(uuid4())
     io = IOBuffer()
     for (i, (method, target, hdrs)) in enumerate(subrequests)
+        _check_batch_line("request line", string(method, " ", target))
+        for (k, v) in hdrs
+            _check_batch_line("header name", k)
+            _check_batch_line("header $(repr(k))", v)
+        end
         print(io, "--", boundary, "\r\n", "Content-Type: application/http\r\n", "Content-Transfer-Encoding: binary\r\n",
             "Content-ID: ", i - 1, "\r\n\r\n", method, " ", target, " HTTP/1.1\r\n")
         for (k, v) in hdrs

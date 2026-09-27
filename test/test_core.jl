@@ -4,6 +4,10 @@ using AzureSDK.EventHubs
 using AzureSDK.ServiceBus
 using Test, Dates
 
+struct StaticTokenCredential <: TokenCredential end
+AzureCore.get_token_info(::StaticTokenCredential, scopes...; kwargs...) =
+    AccessTokenInfo("tok", floor(Int, time()) + 3600)
+
 @testset "AzureCore" begin
     @testset "SAS tokens" begin
         # reference value computed with the algorithm used by the Python SDK
@@ -32,6 +36,34 @@ using Test, Dates
         # the emulator flag is refused for non-local hosts (it disables TLS)
         @test_throws ArgumentError ServiceBus.parse_connection_string(
             "Endpoint=sb://ns.servicebus.windows.net;SharedAccessKeyName=n;SharedAccessKey=k;UseDevelopmentEmulator=true")
+        for h in ("127.evil.example", "emulator.test")
+            @test_throws ArgumentError ServiceBus.parse_connection_string(
+                "Endpoint=sb://$h;SharedAccessKeyName=n;SharedAccessKey=k;UseDevelopmentEmulator=true")
+        end
+        # docker-compose service names are allowed
+        @test ServiceBus.parse_connection_string(
+            "Endpoint=sb://servicebus-emulator;SharedAccessKeyName=n;SharedAccessKey=k;UseDevelopmentEmulator=true") !== nothing
+        # the keyword form is checked too, and Entra tokens only go unencrypted to loopback hosts
+        @test_throws ArgumentError ServiceBusClient("ns.servicebus.windows.net", AzureNamedKeyCredential("n", "k");
+            use_development_emulator=true)
+        @test_throws ArgumentError ServiceBusClient("servicebus-emulator", StaticTokenCredential(); use_development_emulator=true)
+        close(ServiceBusClient("localhost", StaticTokenCredential(); use_development_emulator=true))
+        close(ServiceBusClient("servicebus-emulator", AzureNamedKeyCredential("n", "k"); use_development_emulator=true))
+    end
+
+    @testset "local and emulator hosts" begin
+        for h in ("localhost", "LOCALHOST", "app.localhost", "127.0.0.1", "127.1.2.3", "::1", "[::1]")
+            @test AzureCore.is_local_host(h)
+        end
+        for h in ("127.evil.example", "127.0.0.1.nip.io", "127.0.0.256", "localhost.evil.example", "fileserver",
+            "x.test", "10.0.0.1", "")
+            @test !AzureCore.is_local_host(h)
+        end
+        @test AzureCore.is_dev_host("azurite") && AzureCore.is_dev_host("servicebus-emulator")
+        @test AzureCore.is_dev_host("127.0.0.1")
+        for h in ("127.evil.example", "x.test", "acct.blob.core.windows.net", "-bad", "")
+            @test !AzureCore.is_dev_host(h)
+        end
     end
 
     @testset "credentials never print secrets" begin

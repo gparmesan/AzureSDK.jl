@@ -118,7 +118,7 @@ function _http_received(r::ServiceBusReceiver, resp)
     props = AMQP.Properties(message_id=get(bp, "MessageId", nothing), correlation_id=get(bp, "CorrelationId", nothing),
         group_id=get(bp, "SessionId", nothing), subject=get(bp, "Label", nothing), reply_to=get(bp, "ReplyTo", nothing),
         to=get(bp, "To", nothing), reply_to_group_id=get(bp, "ReplyToSessionId", nothing),
-        content_type=isempty(ct) ? nothing : Symbol(ct))
+        content_type=isempty(ct) ? nothing : AMQP.wire_symbol(ct))
     app = Dict{String,Any}()
     for (k, v) in resp.headers
         lowercase(k) in _STANDARD_HEADERS && continue
@@ -141,12 +141,15 @@ function _http_received(r::ServiceBusReceiver, resp)
     return m
 end
 
-# Never send credentials to a host other than the namespace.
+# Never send credentials anywhere but the namespace endpoint (same scheme, host
+# and port as our own requests, so never over plain HTTP to a real namespace).
 function _check_location(r::ServiceBusReceiver, loc::AbstractString)
     isempty(loc) && throw(ServiceBusServiceError("peek-lock response without Location header"))
     u = URIs.URI(loc)
-    lowercase(u.host) == lowercase(r.client.config.fully_qualified_namespace) ||
-        throw(ServiceBusServiceError("unexpected lock location host"))
+    base = URIs.URI(Messaging.https_base(r.client.config))
+    _port(x) = isempty(x.port) ? (lowercase(x.scheme) == "https" ? "443" : "80") : x.port
+    (lowercase(u.scheme) == base.scheme && lowercase(u.host) == lowercase(base.host) && _port(u) == _port(base)) ||
+        throw(ServiceBusServiceError("unexpected lock location"))
     return nothing
 end
 

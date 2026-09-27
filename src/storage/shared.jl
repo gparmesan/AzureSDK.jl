@@ -141,12 +141,12 @@ function parse_storage_url(url::AbstractString, service::AbstractString)
     scheme = lowercase(u.scheme)
     scheme in ("https", "http") || throw(ArgumentError("invalid account URL: scheme must be https"))
     isempty(u.host) && throw(ArgumentError("invalid account URL $(repr(AzureCore.redact_url(s)))"))
-    if scheme == "http" && !AzureCore.is_local_host(u.host)
+    if scheme == "http" && !AzureCore.is_dev_host(u.host)
         throw(ArgumentError("account URL must use https (http is only allowed for local emulators)"))
     end
     host = lowercase(u.host)
     segs = [unquote_url(x) for x in split(u.path, '/'; keepempty=false)]
-    path_style = _is_ip(host) || AzureCore.is_local_host(host) && !occursin(".$(service).", host)
+    path_style = _is_ip(host) || AzureCore.is_dev_host(host) && !occursin(".$(service).", host)
     account = nothing
     if path_style
         isempty(segs) || (account = popfirst!(segs))

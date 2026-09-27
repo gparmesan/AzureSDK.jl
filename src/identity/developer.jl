@@ -2,10 +2,20 @@
 # Commands are executed directly (never through a shell) with validated
 # arguments and a timeout.
 
+"""
+Look `names` up in the absolute directories of `PATH`, in `PATH` order.
+Unlike `Sys.which`, the current directory is never searched (on Windows
+`Sys.which` checks it first), so an `az.cmd` planted in the working directory
+of an application cannot be run in place of the real CLI.
+"""
 function _find_executable(names...)
-    for n in names
-        p = Sys.which(n)
-        p === nothing || return p
+    for dir in split(get(ENV, "PATH", ""), Sys.iswindows() ? ';' : ':')
+        d = Sys.iswindows() ? strip(strip(dir), '"') : dir
+        (isempty(d) || !isabspath(d)) && continue
+        for n in names
+            p = joinpath(d, n)
+            isfile(p) && (Sys.iswindows() || Sys.isexecutable(p)) && return p
+        end
     end
     return nothing
 end
@@ -73,8 +83,11 @@ function AzureCore.get_token_info(c::AzureCliCredential, scopes::AbstractString.
     tenant = isempty(c.tenant_id) && (tenant_id === nothing || isempty(tenant_id)) ? "" :
              resolve_tenant(isempty(c.tenant_id) ? something(tenant_id, "") : c.tenant_id, tenant_id,
                  c.additionally_allowed_tenants)
+    # resolve_tenant returns a requested tenant unchecked when it equals the
+    # default; the tenant becomes a command-line argument, so always validate.
+    isempty(tenant) || validate_tenant_id(tenant)
     return cached_or_fetch(c.cache, (resource, tenant)) do
-        az = _find_executable((Sys.iswindows() ? ("az.cmd", "az") : ("az",))...)
+        az = _find_executable((Sys.iswindows() ? ("az.cmd", "az.exe") : ("az",))...)
         az === nothing && throw(CredentialUnavailableError("Azure CLI not found on path"))
         args = String[az, "account", "get-access-token", "--output", "json", "--resource", resource]
         isempty(tenant) || append!(args, ["--tenant", tenant])
@@ -138,8 +151,9 @@ function AzureCore.get_token_info(c::AzureDeveloperCliCredential, scopes::Abstra
     tenant = isempty(c.tenant_id) && (tenant_id === nothing || isempty(tenant_id)) ? "" :
              resolve_tenant(isempty(c.tenant_id) ? something(tenant_id, "") : c.tenant_id, tenant_id,
                  c.additionally_allowed_tenants)
+    isempty(tenant) || validate_tenant_id(tenant)
     return cached_or_fetch(c.cache, (sort(scopes_v), tenant)) do
-        azd = _find_executable((Sys.iswindows() ? ("azd.exe", "azd") : ("azd",))...)
+        azd = _find_executable((Sys.iswindows() ? ("azd.exe",) : ("azd",))...)
         azd === nothing && throw(CredentialUnavailableError("Azure Developer CLI could not be found"))
         args = String[azd, "auth", "token", "--output", "json", "--no-prompt"]
         for s in scopes_v

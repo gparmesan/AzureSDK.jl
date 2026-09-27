@@ -26,12 +26,16 @@ use `EventHubs.OperationTimeoutError` or `ServiceBus.OperationTimeoutError`.
 * HTTP requests never follow redirects or store cookies, so credentials are
   never forwarded to another host. Service Bus REST lock URLs must point back
   to the namespace host. Bearer tokens, account keys and SAS tokens are only
-  sent over HTTPS (plain HTTP is limited to local emulators).
+  sent over HTTPS. Plain connections are limited to local emulators (loopback
+  hosts or single-label container names such as `azurite`), and Entra ID
+  tokens are never sent unencrypted to anything but a loopback host.
 * The Storage XML reader rejects DTDs and entity declarations (no XXE or entity
   expansion), bounds nesting depth and requires valid UTF-8.
 * The AMQP decoder validates every length and count against the received
   bytes and bounds nesting depth, frame and message sizes, so malformed or
-  hostile input raises an error instead of exhausting memory.
+  hostile input raises an error instead of exhausting memory. Julia never
+  frees interned symbols, so a process interns at most 50,000 new AMQP symbols
+  (4 MiB) received from peers; symbols that already exist are not limited.
 * Event position filters are validated (no filter-expression injection).
   Tenant IDs, scopes and client IDs are validated before they are used in URLs
   or command lines. The Azure CLI and `azd` are executed directly, never

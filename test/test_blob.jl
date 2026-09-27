@@ -129,6 +129,12 @@ Time:2026-01-01T00:00:00.0000000Z</Message></Error>"""
         @test S.parse_storage_url("https://myacct.blob.core.chinacloudapi.cn", "blob").account_name == "myacct"
         @test S.parse_storage_url("myacct.blob.core.windows.net", "blob").scheme == "https"
         @test_throws ArgumentError S.parse_storage_url("http://myacct.blob.core.windows.net", "blob")
+        # plain HTTP is limited to loopback hosts and single-label (container) names
+        @test S.parse_storage_url("http://localhost:10000/devstoreaccount1", "blob").path_style
+        @test S.parse_storage_url("http://[::1]:10000/devstoreaccount1", "blob").path_style
+        for h in ("127.evil.example", "127.0.0.1.nip.io", "storage.test", "10.0.0.5", "localhost.evil.example")
+            @test_throws ArgumentError S.parse_storage_url("http://$h/devstoreaccount1", "blob")
+        end
         @test_throws ArgumentError S.parse_storage_url("ftp://x", "blob")
 
         ep, cred = S.parse_storage_connection_string(
@@ -152,6 +158,9 @@ Time:2026-01-01T00:00:00.0000000Z</Message></Error>"""
 
         # tokens are never sent over plain HTTP to a remote host; SAS in URL + AzureSasCredential is ambiguous
         @test_throws ArgumentError BlobServiceClient("http://acct.blob.core.windows.net"; credential=FakeTokenCredential([]))
+        # ... and over plain HTTP only to loopback, not to emulator container names
+        @test_throws ArgumentError BlobServiceClient("http://azurite:10000/devstoreaccount1"; credential=FakeTokenCredential([]))
+        @test BlobServiceClient("http://127.0.0.1:10000/devstoreaccount1"; credential=FakeTokenCredential([])) isa BlobServiceClient
         @test_throws ArgumentError BlobServiceClient("https://acct.blob.core.windows.net?sv=1&sig=x&se=2";
             credential=AzureSasCredential("sv=1&sig=y&se=2"))
         @test_throws ArgumentError BlobServiceClient("https://acct.blob.core.windows.net"; max_block_size=0)
@@ -451,6 +460,16 @@ Time:2026-01-01T00:00:00.0000000Z</Message></Error>"""
             @test_throws ArgumentError upload_blob(bc, "x"; blob_type="Nope")
             @test_throws ArgumentError upload_blob(bc, "x"; metadata=Dict("bad name" => "v"))
             @test_throws ArgumentError upload_blob(bc, "x"; metadata=Dict("ok" => "line\nbreak"))
+        end
+
+        @testset "batch: no header injection" begin
+            # the multipart body is assembled by hand, so line breaks must be refused before sending
+            cc = ContainerClient(base, "c"; credential=DEVKEY, fast...)
+            empty!(ms.requests)
+            @test_throws ArgumentError delete_blobs(cc, Dict("name" => "a", "lease_id" => "x\r\nx-ms-evil: 1"))
+            @test_throws ArgumentError set_standard_blob_tier_blobs(cc, "Hot\r\nx-ms-evil: 1", "a")
+            @test_throws ArgumentError delete_blobs(cc, "a"; if_tags_match_condition="\"t\"='v'\nx: y")
+            @test isempty(ms.requests)
         end
     finally
         stop(ms)

@@ -484,7 +484,43 @@ function readstring!(r::ByteReader, n::Integer)
     return s
 end
 
-readsymbol!(r::ByteReader, n::Integer) = Symbol(readstring!(r, n))
+# Julia never frees interned symbols, so symbols decoded from peer data (for
+# example annotation keys or content types chosen by other senders) could grow
+# memory without bound. Symbols that already exist cost nothing; new ones are
+# limited per process, after which decoding a new symbol fails.
+const MAX_NEW_WIRE_SYMBOLS = 50_000
+const MAX_NEW_WIRE_SYMBOL_BYTES = 4 * 1024 * 1024
+const _WIRE_SYMBOL_LOCK = ReentrantLock()
+const _new_wire_symbols = Ref(0)
+const _new_wire_symbol_bytes = Ref(0)
+
+function _existing_symbol(s::String)
+    p = ccall(:jl_symbol_lookup, Ptr{Cvoid}, (Cstring,), s)
+    return p == C_NULL ? nothing : unsafe_pointer_to_objref(p)::Symbol
+end
+
+"""
+    wire_symbol(s) -> Symbol
+
+`Symbol(s)` for a name received from a peer, subject to the per-process
+limit on newly interned symbols.
+"""
+function wire_symbol(s::AbstractString)
+    str = String(s)
+    occursin('\0', str) && throw(AMQPDecodeError("AMQP symbol contains a NUL character"))
+    sym = _existing_symbol(str)
+    sym === nothing || return sym
+    @lock _WIRE_SYMBOL_LOCK begin
+        (_new_wire_symbols[] >= MAX_NEW_WIRE_SYMBOLS ||
+         _new_wire_symbol_bytes[] + sizeof(str) > MAX_NEW_WIRE_SYMBOL_BYTES) &&
+            throw(AMQPDecodeError("too many distinct AMQP symbols received"))
+        _new_wire_symbols[] += 1
+        _new_wire_symbol_bytes[] += sizeof(str)
+    end
+    return Symbol(str)
+end
+
+readsymbol!(r::ByteReader, n::Integer) = wire_symbol(readstring!(r, n))
 
 @inline function checked_char(u::UInt32)
     (u > 0x10ffff || 0xd800 <= u <= 0xdfff) && throw(AMQPDecodeError("invalid AMQP char"))

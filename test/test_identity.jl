@@ -227,9 +227,24 @@ end
                     @test t.token == "cli-token" && t.expires_on == exp
                     @test_throws CredentialUnavailableError get_token(cred, "https://fail/.default")
                     @test_throws ArgumentError get_token(cred, "https://x/.default; rm -rf /")
+                    # a requested tenant equal to the (empty) default must still be validated
+                    @test_throws ArgumentError get_token(cred, "https://x/.default"; tenant_id="x\" & calc & \"")
+                    @test_throws ArgumentError get_token(AzureDeveloperCliCredential(), "https://x/.default";
+                        tenant_id="x\" & calc & \"")
                 end
                 withenv("PATH" => mktempdir()) do
                     @test_throws CredentialUnavailableError get_token(AzureCliCredential(), "https://x/.default")
+                end
+                # the current directory and relative PATH entries are never searched
+                cd(dir) do
+                    for path in ("", ".", "relative/bin", ":")
+                        withenv("PATH" => path) do
+                            @test Identity._find_executable("az") === nothing
+                        end
+                    end
+                end
+                withenv("PATH" => "/nonexistent:" * dir) do
+                    @test Identity._find_executable("az") == script
                 end
                 # expiresOn in local time (older CLI versions)
                 t = Identity._parse_cli_token("{\"accessToken\":\"x\",\"expiresOn\":\"2030-01-01 12:00:00.000000\"}")
