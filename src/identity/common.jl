@@ -237,7 +237,11 @@ function _oauth_error_message(resp)
     if desc isa AbstractString
         return string(something(err, "error"), ": ", first(split(desc, "\r\n")))
     end
-    return "HTTP $(resp.status)"
+    # Other formats (e.g. {"error": {"code", "message"}} or plain text): show the start of the body.
+    # Only error responses get here, so the body holds no token.
+    text = strip(replace(body, r"\s+" => " "))
+    isempty(text) && return "HTTP $(resp.status)"
+    return "HTTP $(resp.status): " * (length(text) > 300 ? first(text, 300) * "…" : text)
 end
 
 """
