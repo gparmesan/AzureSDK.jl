@@ -1271,18 +1271,39 @@ end
     drain!(link::ReceiverLink; timeout=10) -> Bool
 
 Ask the sender to use up or give back all outstanding credit and wait until it
-has. Deliveries sent meanwhile are queued. Returns `false` on timeout.
+has. Deliveries sent meanwhile are queued. Returns `false` on timeout; the
+drain then stays pending (see [`drain_pending!`](@ref)) and a later call waits
+for it without asking again.
 """
 function drain!(l::ReceiverLink; timeout::Real=10.0)
     c = l.session.conn::Connection
     lock(c.lock)
     try
         _link_usable(l)
-        l.link_credit == 0 && return true
-        _issue_credit!(l, l.link_credit; drain=true)
+        if l.link_credit == 0
+            l.draining = false          # nothing more can be delivered
+            return true
+        end
+        l.draining || _issue_credit!(l, l.link_credit; drain=true)   # else wait for the pending drain
         return wait_until(() -> !l.draining || l.state !== :attached, l.cond, deadline_after(timeout))
     finally
         unlock(c.lock)
+    end
+end
+
+"""
+    drain_pending!(link::ReceiverLink) -> Bool
+
+Whether a drain requested with [`drain!`](@ref) is still unanswered while the
+sender holds credit. Issuing credit then would cancel the drain (a flow
+without `drain` ends drain mode), so callers wait for deliveries or the
+sender's reply instead. With no credit left the sender cannot deliver
+anything more, so the drain is treated as complete.
+"""
+function drain_pending!(l::ReceiverLink)
+    @lock l.session.conn.lock begin
+        l.draining && l.link_credit == 0 && (l.draining = false)
+        l.draining
     end
 end
 

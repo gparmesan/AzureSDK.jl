@@ -4,6 +4,8 @@ const SESSION_FILTER = Symbol("com.microsoft:session-filter")
 const SESSION_LOCKED_UNTIL = Symbol("com.microsoft:locked-until-utc")
 const DEADLETTER_CONDITION = Symbol("com.microsoft:dead-letter")
 const FURTHER_RECEIVE_WAIT = 0.2      # seconds to wait for more messages after the first
+const PEEK_LOCK_DRAIN_TIMEOUT = 10.0  # upper bound on waiting for a drain in PEEK_LOCK mode
+const RECEIVE_AND_DELETE_DRAIN_TIMEOUT = 60.0   # ... in RECEIVE_AND_DELETE mode (see receive_messages)
 
 """
     ServiceBusSession
@@ -216,9 +218,12 @@ function receive_messages(r::ServiceBusReceiver; max_message_count::Integer=1,
         link = _receiver_link(r; attach_timeout=r.session !== nothing && wait !== nothing ? wait : nothing)
         gen = r.link[2]
         n = Int(max_message_count)
+        call_deadline = wait === nothing ? nothing : time() + wait
         got = AMQP.take_queued!(link, n)
         if isempty(got)
-            r.prefetch_count == 0 && AMQP.flow!(link, n - AMQP.queued_count(link))
+            # while an earlier drain is unanswered the broker still holds credit;
+            # new credit would cancel the drain, so just wait for deliveries
+            r.prefetch_count == 0 && !AMQP.drain_pending!(link) && AMQP.flow!(link, n - AMQP.queued_count(link))
             first = AMQP.receive_delivery(link; timeout=something(wait, 0.0))
             if first !== nothing
                 push!(got, first)
@@ -232,11 +237,22 @@ function receive_messages(r::ServiceBusReceiver; max_message_count::Integer=1,
                     push!(got, d)
                 end
             end
-            if r.prefetch_count == 0 && AMQP.link_credit(link) > 0
-                # take back unused credit so no further messages get locked for us
-                AMQP.drain!(link; timeout=10.0)
-                length(got) < n && append!(got, AMQP.take_queued!(link, n - length(got)))
+        end
+        if r.prefetch_count == 0 && (AMQP.link_credit(link) > 0 || AMQP.drain_pending!(link))
+            # Take back unused credit so no further messages are sent to us. In
+            # RECEIVE_AND_DELETE mode a message the broker sends after we return is
+            # already deleted and would be lost if the receiver is closed, so wait
+            # for the broker to confirm. In PEEK_LOCK mode late messages are only
+            # locked: they wait here for the next call or are released on close,
+            # so the drain may not hold the caller up beyond its max_wait_time.
+            timeout = if r.receive_mode == ServiceBusReceiveMode.RECEIVE_AND_DELETE
+                RECEIVE_AND_DELETE_DRAIN_TIMEOUT
+            else
+                clamp(call_deadline === nothing ? PEEK_LOCK_DRAIN_TIMEOUT : call_deadline - time(),
+                    FURTHER_RECEIVE_WAIT, PEEK_LOCK_DRAIN_TIMEOUT)
             end
+            AMQP.drain!(link; timeout)
+            length(got) < n && append!(got, AMQP.take_queued!(link, n - length(got)))
         end
         [_wrap(r, d, gen) for d in got]
     end
@@ -513,7 +529,21 @@ function Base.close(r::ServiceBusReceiver)
         r.link = nothing
         l
     end
-    link === nothing || try AMQP.detach(link[1]; timeout=5.0) catch end
+    if link !== nothing
+        l = link[1]
+        # messages delivered to this link that the application never received
+        left = try AMQP.take_queued!(l) catch; AMQP.IncomingDelivery[] end
+        if r.receive_mode == ServiceBusReceiveMode.PEEK_LOCK
+            # release them now instead of leaving them locked until the lock expires
+            for d in left
+                d.settled || try AMQP.settle!(d, AMQP.Released()) catch end
+            end
+        elseif !isempty(left)
+            @warn "Closing a RECEIVE_AND_DELETE receiver discarded $(length(left)) message(s) that had been \
+                   delivered (e.g. prefetched) but not received" entity = r.entity_path
+        end
+        try AMQP.detach(l; timeout=5.0) catch end
+    end
     m = r.mgmt[]
     m === nothing || try close(m[1]) catch end
     return nothing

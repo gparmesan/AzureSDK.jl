@@ -109,6 +109,7 @@ Base.@kwdef mutable struct Broker
     max_message_size::UInt64 = UInt64(256 * 1024)
     put_tokens::Vector{Tuple{String,String}} = Tuple{String,String}[]   # (audience, type)
     reject_tokens::Bool = false
+    drain_stall::Float64 = 0.0        # >0: pause this many seconds before handling a drain flow (slow broker)
     received_links::Vector{String} = String[]
     stopped::Bool = false
 end
@@ -171,6 +172,9 @@ function serve_connection(b::Broker, t::A.AMQPTransport)
             if f.body === nothing
                 c.heartbeats += 1
                 continue
+            end
+            if b.drain_stall > 0 && f.body isa A.Flow && f.body.drain === true
+                sleep(b.drain_stall)      # later frames wait behind this one, as on a stalled broker
             end
             @lock b.lock handle!(b, c, f)
         end

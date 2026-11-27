@@ -239,6 +239,65 @@ bodies(msgs) = [body_as_str(m) for m in msgs]
             foreach(m -> complete_message(r, m), got)
         end
 
+        @testset "slow drain replies" begin
+            # The broker answers drain requests late (seen on the Service Bus emulator).
+            # Only the receiver's connection stalls; the sender uses `client`.
+            MockBroker.entity!(b, "slow")
+            MockBroker.entity!(b, "slow-rd")
+            rc = from_connection_string(ServiceBusClient, cs)
+            s = get_queue_sender(client, "slow")
+            srd = get_queue_sender(client, "slow-rd")
+            try
+                # peek-lock: the call keeps to its time budget; late messages are not lost
+                r = get_queue_receiver(rc, "slow"; max_wait_time=0.5)
+                send_messages(s, ServiceBusMessage("warm-up"))
+                complete_message(r, only(receive_messages(r)))
+                b.drain_stall = 2.0
+                t = @elapsed got = receive_messages(r; max_message_count=10)
+                b.drain_stall = 0.0
+                @test isempty(got)
+                @test t < 1.5
+                send_messages(s, [ServiceBusMessage("late$i") for i in 1:3])   # the broker still has credit
+                got = ServiceBusReceivedMessage[]
+                for _ in 1:20
+                    append!(got, receive_messages(r; max_message_count=10))
+                    length(got) >= 3 && break
+                end
+                @test sort(bodies(got)) == ["late1", "late2", "late3"]
+                foreach(m -> complete_message(r, m), got)
+
+                # peek-lock: messages that arrived but were never handed out are released on close
+                b.drain_stall = 2.0
+                @test isempty(receive_messages(r; max_message_count=10))
+                b.drain_stall = 0.0
+                send_messages(s, [ServiceBusMessage("held$i") for i in 1:3])
+                sleep(0.3)
+                close(r)
+                r2 = get_queue_receiver(client, "slow"; max_wait_time=3)
+                got = receive_messages(r2; max_message_count=10)   # before their 5 s locks would expire
+                @test sort(bodies(got)) == ["held1", "held2", "held3"]
+                foreach(m -> complete_message(r2, m), got)
+                close(r2)
+
+                # receive-and-delete: no message may arrive after the call returned, since
+                # it would be lost when the receiver closes (the drain takes longer than 10 s)
+                rd = get_queue_receiver(rc, "slow-rd"; receive_mode=ServiceBusReceiveMode.RECEIVE_AND_DELETE,
+                    max_wait_time=0.5)
+                send_messages(srd, ServiceBusMessage("warm-up"))
+                @test bodies(receive_messages(rd)) == ["warm-up"]
+                b.drain_stall = 12.0
+                @test isempty(receive_messages(rd; max_message_count=10))
+                b.drain_stall = 0.0
+                send_messages(srd, [ServiceBusMessage("rd$i") for i in 1:3])
+                sleep(0.3)
+                close(rd)
+                @test length(b.entities["slow-rd"].messages) == 3
+            finally
+                b.drain_stall = 0.0
+                close(rc)
+            end
+        end
+
         @testset "close" begin
             c2 = from_connection_string(ServiceBusClient, cs)
             s = get_queue_sender(c2, "q")
