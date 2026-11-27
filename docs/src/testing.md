@@ -66,7 +66,8 @@ julia --project=docs docs/make.jl
 After cloning, run `sh scripts/configure-private-git.sh` to use a neutral
 commit identity, get a `git ci` alias that records UTC timestamps, and install
 a pre-commit hook that refuses changes containing your home directory path,
-e-mail address or host name.
+e-mail address or host name, and commits whose timestamps would include your
+time zone.
 
 ### Code style
 

@@ -3,7 +3,8 @@
 #
 #   * a neutral author/committer identity (local to this repository)
 #   * refuse to commit when no identity is configured (no user@hostname fallback)
-#   * `git ci` = commit with UTC timestamps (no time zone / location hint)
+#   * `git ci` = commit with UTC timestamps (no time zone / location hint);
+#     the hook below refuses commits that would record another time zone
 #   * a pre-commit hook that blocks staged changes containing your home
 #     directory path, your global git e-mail address, your host name, or any
 #     string listed with `git config --local --add privacy.block "<text>"`
@@ -21,10 +22,16 @@ git config --local commit.gpgsign false
 git config --local alias.ci '!TZ=UTC git commit'
 
 hook="$(git rev-parse --git-path hooks)/pre-commit"
-cat > "$hook" <<'HOOK'
+cat >"$hook" <<'HOOK'
 #!/bin/sh
 # Block commits whose staged changes contain personal data (see
-# scripts/configure-private-git.sh). Bypass with `git commit --no-verify`.
+# scripts/configure-private-git.sh) or whose time stamps would reveal the local
+# time zone. Bypass with `git commit --no-verify`.
+if [ -z "${GIT_COMMITTER_DATE:-}" ] && [ "$(date +%z)" != "+0000" ]; then
+    echo "pre-commit: the commit time would include your time zone ($(date +%z))." >&2
+    echo "            Use 'git ci' or 'TZ=UTC git commit' instead." >&2
+    exit 1
+fi
 added=$(git diff --cached -U0 --no-color | grep '^+' | grep -v '^+++' || true)
 [ -z "$added" ] && exit 0
 found=""
