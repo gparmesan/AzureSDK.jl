@@ -13,7 +13,7 @@ struct CredentialUnavailableError <: AzureError
     message::String
     error::Any
 end
-CredentialUnavailableError(message::AbstractString; error=nothing) = CredentialUnavailableError(String(message), error)
+CredentialUnavailableError(message::AbstractString; error = nothing) = CredentialUnavailableError(String(message), error)
 
 """
     AzureAuthorityHosts
@@ -22,16 +22,16 @@ Well-known Entra ID authority hosts (`AzureAuthorityHosts.AZURE_PUBLIC_CLOUD`,
 `AZURE_CHINA`, `AZURE_GOVERNMENT`).
 """
 module AzureAuthorityHosts
-const AZURE_PUBLIC_CLOUD = "login.microsoftonline.com"
-const AZURE_CHINA = "login.chinacloudapi.cn"
-const AZURE_GOVERNMENT = "login.microsoftonline.us"
+    const AZURE_PUBLIC_CLOUD = "login.microsoftonline.com"
+    const AZURE_CHINA = "login.chinacloudapi.cn"
+    const AZURE_GOVERNMENT = "login.microsoftonline.us"
 end
 
 const DEFAULT_REFRESH_OFFSET = 300      # refresh tokens 5 minutes before expiry
 const DEFAULT_TOKEN_REFRESH_RETRY_DELAY = 30
 
 "Normalize an authority (host or https URL) to `https://host`."
-function normalize_authority(authority::Union{Nothing,AbstractString})
+function normalize_authority(authority::Union{Nothing, AbstractString})
     a = authority === nothing || isempty(authority) ? get(ENV, "AZURE_AUTHORITY_HOST", AzureAuthorityHosts.AZURE_PUBLIC_CLOUD) :
         String(authority)
     a = rstrip(a, '/')
@@ -70,7 +70,7 @@ end
 "Resource URI for a single `.default` scope (managed identity and CLI take resources)."
 function scope_to_resource(scope::AbstractString)
     validate_scope(scope)
-    return endswith(scope, "/.default") ? scope[1:end-length("/.default")] : String(scope)
+    return endswith(scope, "/.default") ? scope[1:(end - length("/.default"))] : String(scope)
 end
 
 function _require_scopes(scopes)
@@ -82,8 +82,10 @@ end
 Resolve the tenant to request a token from, honouring
 `additionally_allowed_tenants` (and `AZURE_IDENTITY_DISABLE_MULTITENANTAUTH`).
 """
-function resolve_tenant(default_tenant::AbstractString, requested::Union{Nothing,AbstractString},
-    allowed::Vector{String})
+function resolve_tenant(
+        default_tenant::AbstractString, requested::Union{Nothing, AbstractString},
+        allowed::Vector{String}
+    )
     (requested === nothing || isempty(requested) || requested == default_tenant) && return String(default_tenant)
     if lowercase(get(ENV, "AZURE_IDENTITY_DISABLE_MULTITENANTAUTH", "")) in ("1", "true")
         return String(default_tenant)
@@ -91,21 +93,24 @@ function resolve_tenant(default_tenant::AbstractString, requested::Union{Nothing
     validate_tenant_id(requested)
     default_tenant == "adfs" && throw(ClientAuthenticationError("A tenant_id cannot be specified for ADFS authentication."))
     ("*" in allowed || requested in allowed) && return String(requested)
-    throw(ClientAuthenticationError(
-        "The current credential is not configured to acquire tokens for tenant $(requested). To enable acquiring tokens for this tenant add it to the additionally_allowed_tenants when creating the credential, or add \"*\" to additionally_allowed_tenants to allow acquiring tokens for any tenant."))
+    throw(
+        ClientAuthenticationError(
+            "The current credential is not configured to acquire tokens for tenant $(requested). To enable acquiring tokens for this tenant add it to the additionally_allowed_tenants when creating the credential, or add \"*\" to additionally_allowed_tenants to allow acquiring tokens for any tenant."
+        )
+    )
 end
 
 const _CAE_CLAIMS = Dict("access_token" => Dict("xms_cc" => Dict("values" => ["CP1"])))
 
-function _merge_claims(claims::Union{Nothing,AbstractString}, enable_cae::Bool)
+function _merge_claims(claims::Union{Nothing, AbstractString}, enable_cae::Bool)
     enable_cae || return claims
     (claims === nothing || isempty(claims)) && return JSON.json(_CAE_CLAIMS)
     parsed = try
-        JSON.parse(claims; dicttype=Dict{String,Any})
+        JSON.parse(claims; dicttype = Dict{String, Any})
     catch
         throw(ArgumentError("claims must be a JSON object"))
     end
-    at = get!(parsed, "access_token", Dict{String,Any}())
+    at = get!(parsed, "access_token", Dict{String, Any}())
     at["xms_cc"] = Dict("values" => ["CP1"])
     return JSON.json(parsed)
 end
@@ -122,15 +127,15 @@ failed refresh falls back to the cached token while it is still valid.
 mutable struct TokenCache
     lock::ReentrantLock
     fetch_lock::ReentrantLock
-    entries::Dict{Any,AccessTokenInfo}
-    last_attempt::Dict{Any,Float64}
+    entries::Dict{Any, AccessTokenInfo}
+    last_attempt::Dict{Any, Float64}
 end
-TokenCache() = TokenCache(ReentrantLock(), ReentrantLock(), Dict{Any,AccessTokenInfo}(), Dict{Any,Float64}())
+TokenCache() = TokenCache(ReentrantLock(), ReentrantLock(), Dict{Any, AccessTokenInfo}(), Dict{Any, Float64}())
 
 _needs_refresh(t::AccessTokenInfo, now::Real) =
     t.refresh_on !== nothing ? now >= t.refresh_on : now >= t.expires_on - DEFAULT_REFRESH_OFFSET
 
-function cached_or_fetch(fetch::Function, cache::TokenCache, key; bypass::Bool=false)
+function cached_or_fetch(fetch::Function, cache::TokenCache, key; bypass::Bool = false)
     now = time()
     if !bypass
         tok = @lock cache.lock get(cache.entries, key, nothing)
@@ -183,9 +188,9 @@ end
 Build an `AccessTokenInfo` from an OAuth2 token response body. Handles
 `expires_in`/`expires_on`/`refresh_in` as numbers or numeric strings.
 """
-function parse_token_response(body::AbstractString; now::Real=time(), source::AbstractString="token endpoint")
+function parse_token_response(body::AbstractString; now::Real = time(), source::AbstractString = "token endpoint")
     obj = try
-        JSON.parse(body; dicttype=Dict{String,Any})
+        JSON.parse(body; dicttype = Dict{String, Any})
     catch
         throw(ClientAuthenticationError("Unexpected response from $source (not JSON)"))
     end
@@ -212,7 +217,7 @@ function parse_token_response(body::AbstractString; now::Real=time(), source::Ab
         lifetime >= 7200 ? floor(Int, now) + lifetime ÷ 2 : nothing
     end
     token_type = something(_json_get(obj, "token_type"), "Bearer")
-    return AccessTokenInfo(String(token), expires_on; token_type=string(token_type), refresh_on=refresh_on)
+    return AccessTokenInfo(String(token), expires_on; token_type = string(token_type), refresh_on = refresh_on)
 end
 
 # App Service / Cloud Shell sometimes return "11/8/2023 3:04:05 PM +00:00"
@@ -228,7 +233,7 @@ end
 function _oauth_error_message(resp)
     body = String(copy(resp.body))
     obj = try
-        JSON.parse(body; dicttype=Dict{String,Any})
+        JSON.parse(body; dicttype = Dict{String, Any})
     catch
         nothing
     end
@@ -256,18 +261,22 @@ struct EntraClient
     timeout::Float64
 end
 
-function EntraClient(tenant_id::AbstractString, client_id::AbstractString; authority=nothing,
-    additionally_allowed_tenants=String[], retry_total::Integer=3, timeout::Real=30.0)
+function EntraClient(
+        tenant_id::AbstractString, client_id::AbstractString; authority = nothing,
+        additionally_allowed_tenants = String[], retry_total::Integer = 3, timeout::Real = 30.0
+    )
     isempty(client_id) && throw(ArgumentError("client_id should be the id of a Microsoft Entra application"))
-    EntraClient(validate_tenant_id(tenant_id), String(client_id), normalize_authority(authority),
+    return EntraClient(
+        validate_tenant_id(tenant_id), String(client_id), normalize_authority(authority),
         String[String(t) for t in additionally_allowed_tenants],
-        RetryOptions(retry_total=retry_total), Float64(timeout))
+        RetryOptions(retry_total = retry_total), Float64(timeout)
+    )
 end
 
 token_endpoint(c::EntraClient, tenant::AbstractString) = string(c.authority, "/", tenant, "/oauth2/v2.0/token")
 
 function _form_encode(pairs)
-    join((string(URIs.escapeuri(k), "=", URIs.escapeuri(v)) for (k, v) in pairs), "&")
+    return join((string(URIs.escapeuri(k), "=", URIs.escapeuri(v)) for (k, v) in pairs), "&")
 end
 
 """
@@ -276,20 +285,30 @@ end
 POST to the tenant's v2.0 token endpoint. `grant_params` supplies the grant
 specific form fields (client secret, assertion, ...).
 """
-function request_token(c::EntraClient, scopes::Vector{String}, tenant::AbstractString,
-    grant_params::Vector{Pair{String,String}}; claims::Union{Nothing,AbstractString}=nothing)
-    form = Pair{String,String}["client_id" => c.client_id, "scope" => join(scopes, " ")]
+function request_token(
+        c::EntraClient, scopes::Vector{String}, tenant::AbstractString,
+        grant_params::Vector{Pair{String, String}}; claims::Union{Nothing, AbstractString} = nothing
+    )
+    form = Pair{String, String}["client_id" => c.client_id, "scope" => join(scopes, " ")]
     append!(form, grant_params)
     claims === nothing || isempty(claims) || push!(form, "claims" => String(claims))
     url = token_endpoint(c, tenant)
-    resp = AzureCore.send_request("POST", url;
-        headers=["Content-Type" => "application/x-www-form-urlencoded", "Accept" => "application/json",
-            "User-Agent" => AzureCore.user_agent("identity")],
-        body=_form_encode(form), retry=c.retry, timeout=c.timeout,
-        retry_status_codes=(429, 500, 502, 503, 504))
+    resp = AzureCore.send_request(
+        "POST", url;
+        headers = [
+            "Content-Type" => "application/x-www-form-urlencoded", "Accept" => "application/json",
+            "User-Agent" => AzureCore.user_agent("identity"),
+        ],
+        body = _form_encode(form), retry = c.retry, timeout = c.timeout,
+        retry_status_codes = (429, 500, 502, 503, 504)
+    )
     if resp.status != 200
-        throw(ClientAuthenticationError("Authentication failed: $(_oauth_error_message(resp))";
-            status_code=resp.status))
+        throw(
+            ClientAuthenticationError(
+                "Authentication failed: $(_oauth_error_message(resp))";
+                status_code = resp.status
+            )
+        )
     end
-    return parse_token_response(String(copy(resp.body)); source="Microsoft Entra ID")
+    return parse_token_response(String(copy(resp.body)); source = "Microsoft Entra ID")
 end

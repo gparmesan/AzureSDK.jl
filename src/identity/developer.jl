@@ -27,9 +27,9 @@ function _run_process(cmd::Cmd, timeout::Real)
     out = IOBuffer()
     err = IOBuffer()
     proc = try
-        run(pipeline(ignorestatus(cmd); stdout=out, stderr=err, stdin=devnull); wait=false)
+        run(pipeline(ignorestatus(cmd); stdout = out, stderr = err, stdin = devnull); wait = false)
     catch e
-        throw(CredentialUnavailableError("failed to start $(cmd.exec[1])"; error=e))
+        throw(CredentialUnavailableError("failed to start $(cmd.exec[1])"; error = e))
     end
     timed_out = Threads.Atomic{Bool}(false)
     timer = Timer(timeout) do _
@@ -64,16 +64,22 @@ struct AzureCliCredential <: TokenCredential
     process_timeout::Float64
     cache::TokenCache
 end
-function AzureCliCredential(; tenant_id::AbstractString="", additionally_allowed_tenants=String[],
-    process_timeout::Real=10)
+function AzureCliCredential(;
+        tenant_id::AbstractString = "", additionally_allowed_tenants = String[],
+        process_timeout::Real = 10
+    )
     isempty(tenant_id) || validate_tenant_id(tenant_id)
-    AzureCliCredential(String(tenant_id), String[String(t) for t in additionally_allowed_tenants],
-        Float64(process_timeout), TokenCache())
+    return AzureCliCredential(
+        String(tenant_id), String[String(t) for t in additionally_allowed_tenants],
+        Float64(process_timeout), TokenCache()
+    )
 end
 Base.show(io::IO, c::AzureCliCredential) = print(io, "AzureCliCredential(tenant_id=", repr(c.tenant_id), ")")
 
-function AzureCore.get_token_info(c::AzureCliCredential, scopes::AbstractString...; claims=nothing,
-    tenant_id=nothing, enable_cae::Bool=false)
+function AzureCore.get_token_info(
+        c::AzureCliCredential, scopes::AbstractString...; claims = nothing,
+        tenant_id = nothing, enable_cae::Bool = false
+    )
     scopes_v = _require_scopes(scopes)
     length(scopes_v) == 1 || throw(ArgumentError("AzureCliCredential requires exactly one scope per token request"))
     if claims !== nothing && !isempty(claims)
@@ -81,8 +87,10 @@ function AzureCore.get_token_info(c::AzureCliCredential, scopes::AbstractString.
     end
     resource = scope_to_resource(scopes_v[1])
     tenant = isempty(c.tenant_id) && (tenant_id === nothing || isempty(tenant_id)) ? "" :
-             resolve_tenant(isempty(c.tenant_id) ? something(tenant_id, "") : c.tenant_id, tenant_id,
-                 c.additionally_allowed_tenants)
+        resolve_tenant(
+            isempty(c.tenant_id) ? something(tenant_id, "") : c.tenant_id, tenant_id,
+            c.additionally_allowed_tenants
+        )
     # resolve_tenant returns a requested tenant unchecked when it equals the
     # default; the tenant becomes a command-line argument, so always validate.
     isempty(tenant) || validate_tenant_id(tenant)
@@ -91,7 +99,7 @@ function AzureCore.get_token_info(c::AzureCliCredential, scopes::AbstractString.
         az === nothing && throw(CredentialUnavailableError("Azure CLI not found on path"))
         args = String[az, "account", "get-access-token", "--output", "json", "--resource", resource]
         isempty(tenant) || append!(args, ["--tenant", tenant])
-        cmd = Cmd(Cmd(args); dir=homedir())
+        cmd = Cmd(Cmd(args); dir = homedir())
         code, out, err = _run_process(cmd, c.process_timeout)
         if code != 0
             e = _sanitize_stderr(err)
@@ -106,7 +114,7 @@ end
 
 function _parse_cli_token(out::AbstractString)
     obj = try
-        JSON.parse(out; dicttype=Dict{String,Any})
+        JSON.parse(out; dicttype = Dict{String, Any})
     catch
         throw(ClientAuthenticationError("Unexpected output from Azure CLI"))
     end
@@ -136,21 +144,29 @@ struct AzureDeveloperCliCredential <: TokenCredential
     process_timeout::Float64
     cache::TokenCache
 end
-function AzureDeveloperCliCredential(; tenant_id::AbstractString="", additionally_allowed_tenants=String[],
-    process_timeout::Real=10)
+function AzureDeveloperCliCredential(;
+        tenant_id::AbstractString = "", additionally_allowed_tenants = String[],
+        process_timeout::Real = 10
+    )
     isempty(tenant_id) || validate_tenant_id(tenant_id)
-    AzureDeveloperCliCredential(String(tenant_id), String[String(t) for t in additionally_allowed_tenants],
-        Float64(process_timeout), TokenCache())
+    return AzureDeveloperCliCredential(
+        String(tenant_id), String[String(t) for t in additionally_allowed_tenants],
+        Float64(process_timeout), TokenCache()
+    )
 end
 Base.show(io::IO, c::AzureDeveloperCliCredential) = print(io, "AzureDeveloperCliCredential(tenant_id=", repr(c.tenant_id), ")")
 
-function AzureCore.get_token_info(c::AzureDeveloperCliCredential, scopes::AbstractString...; claims=nothing,
-    tenant_id=nothing, enable_cae::Bool=false)
+function AzureCore.get_token_info(
+        c::AzureDeveloperCliCredential, scopes::AbstractString...; claims = nothing,
+        tenant_id = nothing, enable_cae::Bool = false
+    )
     scopes_v = _require_scopes(scopes)
     foreach(validate_scope, scopes_v)
     tenant = isempty(c.tenant_id) && (tenant_id === nothing || isempty(tenant_id)) ? "" :
-             resolve_tenant(isempty(c.tenant_id) ? something(tenant_id, "") : c.tenant_id, tenant_id,
-                 c.additionally_allowed_tenants)
+        resolve_tenant(
+            isempty(c.tenant_id) ? something(tenant_id, "") : c.tenant_id, tenant_id,
+            c.additionally_allowed_tenants
+        )
     isempty(tenant) || validate_tenant_id(tenant)
     return cached_or_fetch(c.cache, (sort(scopes_v), tenant)) do
         azd = _find_executable((Sys.iswindows() ? ("azd.exe",) : ("azd",))...)
@@ -160,7 +176,7 @@ function AzureCore.get_token_info(c::AzureDeveloperCliCredential, scopes::Abstra
             append!(args, ["--scope", s])
         end
         isempty(tenant) || append!(args, ["--tenant-id", tenant])
-        code, out, err = _run_process(Cmd(Cmd(args); dir=homedir()), c.process_timeout)
+        code, out, err = _run_process(Cmd(Cmd(args); dir = homedir()), c.process_timeout)
         if code != 0
             e = _sanitize_stderr(err)
             if occursin("azd auth login", e) || occursin("not logged in", e)
@@ -169,7 +185,7 @@ function AzureCore.get_token_info(c::AzureDeveloperCliCredential, scopes::Abstra
             throw(ClientAuthenticationError("Azure Developer CLI failed to get a token: $e"))
         end
         obj = try
-            JSON.parse(out; dicttype=Dict{String,Any})
+            JSON.parse(out; dicttype = Dict{String, Any})
         catch
             throw(ClientAuthenticationError("Unexpected output from Azure Developer CLI"))
         end
@@ -177,8 +193,10 @@ function AzureCore.get_token_info(c::AzureDeveloperCliCredential, scopes::Abstra
         exp = _json_get(obj, "expiresOn")
         (token isa AbstractString && exp isa AbstractString) ||
             throw(ClientAuthenticationError("Unexpected output from Azure Developer CLI"))
-        dt = tryparse(Dates.DateTime, replace(exp, r"Z$" => "", r"\.\d+$" => "", r"[+-]\d\d:\d\d$" => ""),
-            Dates.dateformat"y-m-dTH:M:S")
+        dt = tryparse(
+            Dates.DateTime, replace(exp, r"Z$" => "", r"\.\d+$" => "", r"[+-]\d\d:\d\d$" => ""),
+            Dates.dateformat"y-m-dTH:M:S"
+        )
         dt === nothing && throw(ClientAuthenticationError("Unexpected expiry from Azure Developer CLI"))
         AccessTokenInfo(String(token), floor(Int, Dates.datetime2unix(dt)))
     end

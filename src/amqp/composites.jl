@@ -15,21 +15,21 @@ function _convert_field(::Type{T}, v) where {T}
 end
 
 # "multiple" symbol fields may be sent either as a single symbol or an array.
-_convert_field(::Type{Union{Nothing,Vector{Symbol}}}, v::Symbol) = Symbol[v]
-function _convert_field(::Type{Union{Nothing,Vector{Symbol}}}, v::AbstractVector)
+_convert_field(::Type{Union{Nothing, Vector{Symbol}}}, v::Symbol) = Symbol[v]
+function _convert_field(::Type{Union{Nothing, Vector{Symbol}}}, v::AbstractVector)
     all(x -> x isa Symbol, v) || throw(AMQPDecodeError("expected symbols"))
     return Symbol[x for x in v]
 end
-function _convert_field(::Type{Union{Nothing,Dict{Symbol,Any}}}, v::AbstractDict)
-    d = Dict{Symbol,Any}()
+function _convert_field(::Type{Union{Nothing, Dict{Symbol, Any}}}, v::AbstractDict)
+    d = Dict{Symbol, Any}()
     for (k, val) in v
         k isa Symbol || throw(AMQPDecodeError("expected symbol keys in fields map"))
         d[k] = val
     end
     return d
 end
-_convert_field(::Type{Union{Nothing,Dict{Any,Any}}}, v::AbstractDict) = Dict{Any,Any}(v)
-_convert_field(::Type{Union{Nothing,Vector{UInt8}}}, v::AbstractVector{UInt8}) = Vector{UInt8}(v)
+_convert_field(::Type{Union{Nothing, Dict{Any, Any}}}, v::AbstractDict) = Dict{Any, Any}(v)
+_convert_field(::Type{Union{Nothing, Vector{UInt8}}}, v::AbstractVector{UInt8}) = Vector{UInt8}(v)
 
 # Field encoding: multiple-symbol fields are encoded as arrays.
 encode_field!(w::ByteWriter, x) = encode!(w, x)
@@ -65,56 +65,62 @@ macro composite(name, code, block)
     for (i, f) in enumerate(fields)
         fname, ftype, default, hasdefault = f
         missing_expr = hasdefault ? default :
-                       :(throw(AMQPDecodeError($("mandatory field $(fname) missing in $(name)"))))
-        push!(decoders, :($fname = let v = $i <= length(list) ? list[$i] : nothing
-            v === nothing ? $missing_expr : convert_field($ftype, v)
-        end))
+            :(throw(AMQPDecodeError($("mandatory field $(fname) missing in $(name)"))))
+        push!(
+            decoders, :(
+                $fname = let v = $i <= length(list) ? list[$i] : nothing
+                    v === nothing ? $missing_expr : convert_field($ftype, v)
+                end
+            )
+        )
     end
-    esc(quote
-        Base.@kwdef struct $name <: AMQPComposite
-            $(struct_fields...)
-        end
-        descriptor_code(::Type{$name}) = UInt64($code)
-        descriptor_code(::$name) = UInt64($code)
-        function encode!(w::ByteWriter, x::$name)
-            writebyte!(w, TC_DESCRIBED)
-            writebyte!(w, TC_SMALLULONG)
-            writebyte!(w, UInt8($code))
-            vals = ($(getters...),)
-            last = 0
-            for i in 1:$n
-                vals[i] === nothing || (last = i)
+    return esc(
+        quote
+            Base.@kwdef struct $name <: AMQPComposite
+                $(struct_fields...)
             end
-            if last == 0
-                writebyte!(w, TC_LIST0)
-                return w
+            descriptor_code(::Type{$name}) = UInt64($code)
+            descriptor_code(::$name) = UInt64($code)
+            function encode!(w::ByteWriter, x::$name)
+                writebyte!(w, TC_DESCRIBED)
+                writebyte!(w, TC_SMALLULONG)
+                writebyte!(w, UInt8($code))
+                vals = ($(getters...),)
+                last = 0
+                for i in 1:$n
+                    vals[i] === nothing || (last = i)
+                end
+                if last == 0
+                    writebyte!(w, TC_LIST0)
+                    return w
+                end
+                start = begin_compound!(w)
+                for i in 1:last
+                    encode_field!(w, vals[i])
+                end
+                return end_compound!(w, start, last, TC_LIST8, TC_LIST32)
             end
-            start = begin_compound!(w)
-            for i in 1:last
-                encode_field!(w, vals[i])
+            function from_list(::Type{$name}, list::AbstractVector)
+                $(decoders...)
+                return $name(; $([Expr(:kw, f[1], f[1]) for f in fields]...))
             end
-            end_compound!(w, start, last, TC_LIST8, TC_LIST32)
+            DESCRIBED_DECODERS[UInt64($code)] = function (v)
+                v isa AbstractVector || throw(AMQPDecodeError($("expected list body for $(name)")))
+                return from_list($name, v)
+            end
         end
-        function from_list(::Type{$name}, list::AbstractVector)
-            $(decoders...)
-            return $name(; $([Expr(:kw, f[1], f[1]) for f in fields]...))
-        end
-        DESCRIBED_DECODERS[UInt64($code)] = function (v)
-            v isa AbstractVector || throw(AMQPDecodeError($("expected list body for $(name)")))
-            return from_list($name, v)
-        end
-    end)
+    )
 end
 
-const MaybeSymbols = Union{Nothing,Vector{Symbol}}
-const MaybeFields = Union{Nothing,Dict{Symbol,Any}}
-const MaybeMap = Union{Nothing,Dict{Any,Any}}
+const MaybeSymbols = Union{Nothing, Vector{Symbol}}
+const MaybeFields = Union{Nothing, Dict{Symbol, Any}}
+const MaybeMap = Union{Nothing, Dict{Any, Any}}
 
 # --- error -------------------------------------------------------------------
 
 @composite AMQPError 0x1d begin
     condition::Symbol
-    description::Union{Nothing,String} = nothing
+    description::Union{Nothing, String} = nothing
     info::MaybeMap = nothing
 end
 
@@ -127,27 +133,27 @@ end
 
 @composite Accepted 0x24 begin end
 @composite Rejected 0x25 begin
-    error::Union{Nothing,AMQPError} = nothing
+    error::Union{Nothing, AMQPError} = nothing
 end
 @composite Released 0x26 begin end
 @composite Modified 0x27 begin
-    delivery_failed::Union{Nothing,Bool} = nothing
-    undeliverable_here::Union{Nothing,Bool} = nothing
+    delivery_failed::Union{Nothing, Bool} = nothing
+    undeliverable_here::Union{Nothing, Bool} = nothing
     message_annotations::MaybeMap = nothing
 end
 
-const Outcome = Union{Accepted,Rejected,Released,Modified}
+const Outcome = Union{Accepted, Rejected, Released, Modified}
 
 # --- terminus -----------------------------------------------------------------
 
 @composite Source 0x28 begin
     address::Any = nothing
-    durable::Union{Nothing,UInt32} = nothing
-    expiry_policy::Union{Nothing,Symbol} = nothing
-    timeout::Union{Nothing,UInt32} = nothing
-    dynamic::Union{Nothing,Bool} = nothing
+    durable::Union{Nothing, UInt32} = nothing
+    expiry_policy::Union{Nothing, Symbol} = nothing
+    timeout::Union{Nothing, UInt32} = nothing
+    dynamic::Union{Nothing, Bool} = nothing
     dynamic_node_properties::MaybeFields = nothing
-    distribution_mode::Union{Nothing,Symbol} = nothing
+    distribution_mode::Union{Nothing, Symbol} = nothing
     filter::MaybeMap = nothing
     default_outcome::Any = nothing
     outcomes::MaybeSymbols = nothing
@@ -156,10 +162,10 @@ end
 
 @composite Target 0x29 begin
     address::Any = nothing
-    durable::Union{Nothing,UInt32} = nothing
-    expiry_policy::Union{Nothing,Symbol} = nothing
-    timeout::Union{Nothing,UInt32} = nothing
-    dynamic::Union{Nothing,Bool} = nothing
+    durable::Union{Nothing, UInt32} = nothing
+    expiry_policy::Union{Nothing, Symbol} = nothing
+    timeout::Union{Nothing, UInt32} = nothing
+    dynamic::Union{Nothing, Bool} = nothing
     dynamic_node_properties::MaybeFields = nothing
     capabilities::MaybeSymbols = nothing
 end
@@ -168,10 +174,10 @@ end
 
 @composite Open 0x10 begin
     container_id::String
-    hostname::Union{Nothing,String} = nothing
-    max_frame_size::Union{Nothing,UInt32} = nothing
-    channel_max::Union{Nothing,UInt16} = nothing
-    idle_time_out::Union{Nothing,UInt32} = nothing
+    hostname::Union{Nothing, String} = nothing
+    max_frame_size::Union{Nothing, UInt32} = nothing
+    channel_max::Union{Nothing, UInt16} = nothing
+    idle_time_out::Union{Nothing, UInt32} = nothing
     outgoing_locales::MaybeSymbols = nothing
     incoming_locales::MaybeSymbols = nothing
     offered_capabilities::MaybeSymbols = nothing
@@ -180,11 +186,11 @@ end
 end
 
 @composite Begin 0x11 begin
-    remote_channel::Union{Nothing,UInt16} = nothing
+    remote_channel::Union{Nothing, UInt16} = nothing
     next_outgoing_id::UInt32
     incoming_window::UInt32
     outgoing_window::UInt32
-    handle_max::Union{Nothing,UInt32} = nothing
+    handle_max::Union{Nothing, UInt32} = nothing
     offered_capabilities::MaybeSymbols = nothing
     desired_capabilities::MaybeSymbols = nothing
     properties::MaybeFields = nothing
@@ -194,68 +200,68 @@ end
     name::String
     handle::UInt32
     role::Bool
-    snd_settle_mode::Union{Nothing,UInt8} = nothing
-    rcv_settle_mode::Union{Nothing,UInt8} = nothing
+    snd_settle_mode::Union{Nothing, UInt8} = nothing
+    rcv_settle_mode::Union{Nothing, UInt8} = nothing
     source::Any = nothing
     target::Any = nothing
     unsettled::MaybeMap = nothing
-    incomplete_unsettled::Union{Nothing,Bool} = nothing
-    initial_delivery_count::Union{Nothing,UInt32} = nothing
-    max_message_size::Union{Nothing,UInt64} = nothing
+    incomplete_unsettled::Union{Nothing, Bool} = nothing
+    initial_delivery_count::Union{Nothing, UInt32} = nothing
+    max_message_size::Union{Nothing, UInt64} = nothing
     offered_capabilities::MaybeSymbols = nothing
     desired_capabilities::MaybeSymbols = nothing
     properties::MaybeFields = nothing
 end
 
 @composite Flow 0x13 begin
-    next_incoming_id::Union{Nothing,UInt32} = nothing
+    next_incoming_id::Union{Nothing, UInt32} = nothing
     incoming_window::UInt32
     next_outgoing_id::UInt32
     outgoing_window::UInt32
-    handle::Union{Nothing,UInt32} = nothing
-    delivery_count::Union{Nothing,UInt32} = nothing
-    link_credit::Union{Nothing,UInt32} = nothing
-    available::Union{Nothing,UInt32} = nothing
-    drain::Union{Nothing,Bool} = nothing
-    echo::Union{Nothing,Bool} = nothing
+    handle::Union{Nothing, UInt32} = nothing
+    delivery_count::Union{Nothing, UInt32} = nothing
+    link_credit::Union{Nothing, UInt32} = nothing
+    available::Union{Nothing, UInt32} = nothing
+    drain::Union{Nothing, Bool} = nothing
+    echo::Union{Nothing, Bool} = nothing
     properties::MaybeFields = nothing
 end
 
 @composite Transfer 0x14 begin
     handle::UInt32
-    delivery_id::Union{Nothing,UInt32} = nothing
-    delivery_tag::Union{Nothing,Vector{UInt8}} = nothing
-    message_format::Union{Nothing,UInt32} = nothing
-    settled::Union{Nothing,Bool} = nothing
-    more::Union{Nothing,Bool} = nothing
-    rcv_settle_mode::Union{Nothing,UInt8} = nothing
+    delivery_id::Union{Nothing, UInt32} = nothing
+    delivery_tag::Union{Nothing, Vector{UInt8}} = nothing
+    message_format::Union{Nothing, UInt32} = nothing
+    settled::Union{Nothing, Bool} = nothing
+    more::Union{Nothing, Bool} = nothing
+    rcv_settle_mode::Union{Nothing, UInt8} = nothing
     state::Any = nothing
-    resume::Union{Nothing,Bool} = nothing
-    aborted::Union{Nothing,Bool} = nothing
-    batchable::Union{Nothing,Bool} = nothing
+    resume::Union{Nothing, Bool} = nothing
+    aborted::Union{Nothing, Bool} = nothing
+    batchable::Union{Nothing, Bool} = nothing
 end
 
 @composite Disposition 0x15 begin
     role::Bool
     first::UInt32
-    last::Union{Nothing,UInt32} = nothing
-    settled::Union{Nothing,Bool} = nothing
+    last::Union{Nothing, UInt32} = nothing
+    settled::Union{Nothing, Bool} = nothing
     state::Any = nothing
-    batchable::Union{Nothing,Bool} = nothing
+    batchable::Union{Nothing, Bool} = nothing
 end
 
 @composite Detach 0x16 begin
     handle::UInt32
-    closed::Union{Nothing,Bool} = nothing
-    error::Union{Nothing,AMQPError} = nothing
+    closed::Union{Nothing, Bool} = nothing
+    error::Union{Nothing, AMQPError} = nothing
 end
 
 @composite End 0x17 begin
-    error::Union{Nothing,AMQPError} = nothing
+    error::Union{Nothing, AMQPError} = nothing
 end
 
 @composite Close 0x18 begin
-    error::Union{Nothing,AMQPError} = nothing
+    error::Union{Nothing, AMQPError} = nothing
 end
 
 # --- SASL -----------------------------------------------------------------------
@@ -266,8 +272,8 @@ end
 
 @composite SaslInit 0x41 begin
     mechanism::Symbol
-    initial_response::Union{Nothing,Vector{UInt8}} = nothing
-    hostname::Union{Nothing,String} = nothing
+    initial_response::Union{Nothing, Vector{UInt8}} = nothing
+    hostname::Union{Nothing, String} = nothing
 end
 
 @composite SaslChallenge 0x42 begin
@@ -280,7 +286,7 @@ end
 
 @composite SaslOutcome 0x44 begin
     code::UInt8
-    additional_data::Union{Nothing,Vector{UInt8}} = nothing
+    additional_data::Union{Nothing, Vector{UInt8}} = nothing
 end
 
 # SaslMechanisms has a mandatory "multiple symbol" field.
@@ -290,27 +296,27 @@ _convert_field(::Type{Vector{Symbol}}, v::AbstractVector) = Symbol[Symbol(x) for
 # --- message sections with list bodies ----------------------------------------------
 
 @composite Header 0x70 begin
-    durable::Union{Nothing,Bool} = nothing
-    priority::Union{Nothing,UInt8} = nothing
-    ttl::Union{Nothing,UInt32} = nothing
-    first_acquirer::Union{Nothing,Bool} = nothing
-    delivery_count::Union{Nothing,UInt32} = nothing
+    durable::Union{Nothing, Bool} = nothing
+    priority::Union{Nothing, UInt8} = nothing
+    ttl::Union{Nothing, UInt32} = nothing
+    first_acquirer::Union{Nothing, Bool} = nothing
+    delivery_count::Union{Nothing, UInt32} = nothing
 end
 
 @composite Properties 0x73 begin
     message_id::Any = nothing
-    user_id::Union{Nothing,Vector{UInt8}} = nothing
+    user_id::Union{Nothing, Vector{UInt8}} = nothing
     to::Any = nothing
-    subject::Union{Nothing,String} = nothing
+    subject::Union{Nothing, String} = nothing
     reply_to::Any = nothing
     correlation_id::Any = nothing
-    content_type::Union{Nothing,Symbol} = nothing
-    content_encoding::Union{Nothing,Symbol} = nothing
-    absolute_expiry_time::Union{Nothing,Dates.DateTime} = nothing
-    creation_time::Union{Nothing,Dates.DateTime} = nothing
-    group_id::Union{Nothing,String} = nothing
-    group_sequence::Union{Nothing,UInt32} = nothing
-    reply_to_group_id::Union{Nothing,String} = nothing
+    content_type::Union{Nothing, Symbol} = nothing
+    content_encoding::Union{Nothing, Symbol} = nothing
+    absolute_expiry_time::Union{Nothing, Dates.DateTime} = nothing
+    creation_time::Union{Nothing, Dates.DateTime} = nothing
+    group_id::Union{Nothing, String} = nothing
+    group_sequence::Union{Nothing, UInt32} = nothing
+    reply_to_group_id::Union{Nothing, String} = nothing
 end
 
 # Sections whose bodies are not lists (maps, binary, arbitrary values) are
@@ -323,7 +329,7 @@ const SECTION_AMQP_SEQUENCE = 0x76
 const SECTION_AMQP_VALUE = 0x77
 const SECTION_FOOTER = 0x78
 
-Base.:(==)(a::T, b::T) where {T<:AMQPComposite} = all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
+Base.:(==)(a::T, b::T) where {T <: AMQPComposite} = all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
 Base.hash(a::AMQPComposite, h::UInt) = hash(ntuple(i -> getfield(a, i), fieldcount(typeof(a))), hash(typeof(a), h))
 
 """
@@ -331,8 +337,8 @@ Base.hash(a::AMQPComposite, h::UInt) = hash(ntuple(i -> getfield(a, i), fieldcou
 
 Copy of the (immutable) composite `x` with the given fields replaced.
 """
-function with_fields(x::T; kw...) where {T<:AMQPComposite}
-    vals = Dict{Symbol,Any}(f => getfield(x, f) for f in fieldnames(T))
+function with_fields(x::T; kw...) where {T <: AMQPComposite}
+    vals = Dict{Symbol, Any}(f => getfield(x, f) for f in fieldnames(T))
     for (k, v) in kw
         vals[k] = v
     end

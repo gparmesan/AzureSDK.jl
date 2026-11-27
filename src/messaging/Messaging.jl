@@ -51,7 +51,7 @@ How a client talks to the service:
   extension not present in the Python SDK.
 """
 module TransportType
-@enum T Amqp AmqpOverWebsocket Http
+    @enum T Amqp AmqpOverWebsocket Http
 end
 
 # ---------------------------------------------------------------------------
@@ -64,20 +64,22 @@ Parsed Event Hubs / Service Bus connection string.
 struct ConnectionStringProperties
     fully_qualified_namespace::String
     endpoint::String
-    entity_path::Union{Nothing,String}
-    shared_access_key_name::Union{Nothing,String}
-    shared_access_key::Union{Nothing,String}
-    shared_access_signature::Union{Nothing,String}
+    entity_path::Union{Nothing, String}
+    shared_access_key_name::Union{Nothing, String}
+    shared_access_key::Union{Nothing, String}
+    shared_access_signature::Union{Nothing, String}
     use_development_emulator::Bool
-    port::Union{Nothing,Int}
+    port::Union{Nothing, Int}
 end
 
 function Base.show(io::IO, p::ConnectionStringProperties)
-    print(io, "ConnectionStringProperties(fully_qualified_namespace=", repr(p.fully_qualified_namespace),
+    return print(
+        io, "ConnectionStringProperties(fully_qualified_namespace=", repr(p.fully_qualified_namespace),
         ", entity_path=", repr(p.entity_path), ", shared_access_key_name=", repr(p.shared_access_key_name),
         p.shared_access_key === nothing ? "" : ", shared_access_key=<redacted>",
         p.shared_access_signature === nothing ? "" : ", shared_access_signature=<redacted>",
-        p.use_development_emulator ? ", use_development_emulator=true" : "", ")")
+        p.use_development_emulator ? ", use_development_emulator=true" : "", ")"
+    )
 end
 
 # The Event Hubs / Service Bus emulators' publicly documented key (not a secret).
@@ -128,8 +130,10 @@ function parse_messaging_connection_string(conn_str::AbstractString)
         throw(ArgumentError(_PLAINTEXT_KEY_MSG))
     end
     entity = get(d, "entitypath", nothing)
-    return ConnectionStringProperties(u.host, string("sb://", u.host, isempty(u.port) ? "" : ":" * u.port, "/"),
-        entity, key_name, key, sas, emulator, port)
+    return ConnectionStringProperties(
+        u.host, string("sb://", u.host, isempty(u.port) ? "" : ":" * u.port, "/"),
+        entity, key_name, key, sas, emulator, port
+    )
 end
 
 "Credential object for the secret in a parsed connection string."
@@ -148,11 +152,11 @@ const JWT_TOKEN_TYPE = "jwt"
 """
     token_provider(credential, scope) -> (audience -> (token, token_type, expires_on))
 """
-function token_provider(credential, scope::AbstractString; sas_ttl::Real=3600)
+function token_provider(credential, scope::AbstractString; sas_ttl::Real = 3600)
     if credential isa AzureNamedKeyCredential
         return function (audience)
             nk = named_key(credential)
-            tok, exp = generate_sas_token(audience, nk.name, nk.key; expiry=sas_ttl)
+            tok, exp = generate_sas_token(audience, nk.name, nk.key; expiry = sas_ttl)
             return tok, SAS_TOKEN_TYPE, Float64(exp)
         end
     elseif credential isa AzureSasCredential
@@ -189,21 +193,21 @@ struct ClientConfig
     credential::Any
     scope::String
     transport_type::TransportType.T
-    port::Union{Nothing,Int}
+    port::Union{Nothing, Int}
     use_emulator::Bool
-    custom_endpoint_address::Union{Nothing,String}
+    custom_endpoint_address::Union{Nothing, String}
     http_proxy::Any
-    connection_verify::Union{Bool,String}
+    connection_verify::Union{Bool, String}
     retry::RetryOptions
     auth_timeout::Float64
     user_agent::String
     component::String
-    scheme_override::Union{Nothing,Symbol}
+    scheme_override::Union{Nothing, Symbol}
     http_client::Any          # HTTP.Client with custom TLS/proxy settings, or nothing
 end
 
 function Base.show(io::IO, c::ClientConfig)
-    print(io, "ClientConfig(", c.fully_qualified_namespace, ", ", c.transport_type, ")")
+    return print(io, "ClientConfig(", c.fully_qualified_namespace, ", ", c.transport_type, ")")
 end
 
 function _transport_type(t)
@@ -218,7 +222,7 @@ end
 function _normalize_namespace(ns::AbstractString)
     s = strip(ns)
     for prefix in ("sb://", "amqps://", "amqp://", "https://", "http://")
-        startswith(lowercase(s), prefix) && (s = s[length(prefix)+1:end])
+        startswith(lowercase(s), prefix) && (s = s[(length(prefix) + 1):end])
     end
     s = rstrip(s, '/')
     occursin('/', s) && throw(ArgumentError("fully_qualified_namespace must be a host name, e.g. 'myns.servicebus.windows.net'"))
@@ -226,11 +230,13 @@ function _normalize_namespace(ns::AbstractString)
     return String(s)
 end
 
-function ClientConfig(fully_qualified_namespace::AbstractString, credential, scope::AbstractString, component::AbstractString;
-    transport_type=TransportType.Amqp, port=nothing, use_development_emulator::Bool=false,
-    custom_endpoint_address=nothing, http_proxy=nothing, connection_verify=true,
-    retry_total::Integer=3, retry_backoff_factor::Real=0.8, retry_backoff_max::Real=120.0,
-    retry_mode=RetryMode.Exponential, auth_timeout::Real=60.0, user_agent=nothing, _scheme=nothing)
+function ClientConfig(
+        fully_qualified_namespace::AbstractString, credential, scope::AbstractString, component::AbstractString;
+        transport_type = TransportType.Amqp, port = nothing, use_development_emulator::Bool = false,
+        custom_endpoint_address = nothing, http_proxy = nothing, connection_verify = true,
+        retry_total::Integer = 3, retry_backoff_factor::Real = 0.8, retry_backoff_max::Real = 120.0,
+        retry_mode = RetryMode.Exponential, auth_timeout::Real = 60.0, user_agent = nothing, _scheme = nothing
+    )
     ns = _normalize_namespace(fully_qualified_namespace)
     host = first(split(ns, ':'))
     if occursin(':', ns) && port === nothing
@@ -254,12 +260,14 @@ function ClientConfig(fully_qualified_namespace::AbstractString, credential, sco
         @warn "TLS certificate verification is disabled (connection_verify=false); never do this in production"
     ua = AzureCore.user_agent(component)
     user_agent === nothing || (ua = string(user_agent, " ", ua))
-    ClientConfig(String(host), credential, String(scope), tt, port, use_development_emulator,
+    return ClientConfig(
+        String(host), credential, String(scope), tt, port, use_development_emulator,
         custom_endpoint_address === nothing ? nothing : String(custom_endpoint_address), http_proxy,
         connection_verify isa AbstractString ? String(connection_verify) : Bool(connection_verify),
         retry_options(; retry_total, retry_backoff_factor, retry_backoff_max, retry_mode), Float64(auth_timeout),
         ua, String(component), _scheme === nothing ? nothing : Symbol(_scheme),
-        _http_client(connection_verify, http_proxy))
+        _http_client(connection_verify, http_proxy)
+    )
 end
 
 "HTTP client honouring `connection_verify` (CA bundle path or `false`) and `http_proxy`."
@@ -269,18 +277,24 @@ _http_client(connection_verify, http_proxy) = AzureCore.http_client(connection_v
 function make_connection(cfg::ClientConfig)
     cfg.transport_type == TransportType.Http && throw(ArgumentError("AMQP connection requested for an HTTP client"))
     scheme = cfg.scheme_override !== nothing ? cfg.scheme_override :
-             cfg.use_emulator ? :amqp :
-             cfg.transport_type == TransportType.AmqpOverWebsocket ? :wss : :amqps
-    tc = TransportConfig(scheme=scheme, host=cfg.fully_qualified_namespace, port=cfg.port,
-        verify_tls=cfg.connection_verify !== false,
-        ca_file=cfg.connection_verify isa String ? cfg.connection_verify : nothing,
-        http_proxy=cfg.http_proxy, custom_endpoint_address=cfg.custom_endpoint_address,
-        connect_timeout=cfg.auth_timeout, http_client=cfg.http_client)
-    props = Dict{Symbol,Any}(:product => "azsdk-julia-$(cfg.component)", :version => AzureCore.PACKAGE_VERSION,
-        :framework => "Julia/$(VERSION)", Symbol("user-agent") => cfg.user_agent)
-    return ClientConnection(tc; hostname=cfg.fully_qualified_namespace, sasl_mechanism=:anonymous,
-        properties=props, token_provider=_checked_token_provider(cfg),
-        operation_timeout=cfg.auth_timeout)
+        cfg.use_emulator ? :amqp :
+        cfg.transport_type == TransportType.AmqpOverWebsocket ? :wss : :amqps
+    tc = TransportConfig(
+        scheme = scheme, host = cfg.fully_qualified_namespace, port = cfg.port,
+        verify_tls = cfg.connection_verify !== false,
+        ca_file = cfg.connection_verify isa String ? cfg.connection_verify : nothing,
+        http_proxy = cfg.http_proxy, custom_endpoint_address = cfg.custom_endpoint_address,
+        connect_timeout = cfg.auth_timeout, http_client = cfg.http_client
+    )
+    props = Dict{Symbol, Any}(
+        :product => "azsdk-julia-$(cfg.component)", :version => AzureCore.PACKAGE_VERSION,
+        :framework => "Julia/$(VERSION)", Symbol("user-agent") => cfg.user_agent
+    )
+    return ClientConnection(
+        tc; hostname = cfg.fully_qualified_namespace, sasl_mechanism = :anonymous,
+        properties = props, token_provider = _checked_token_provider(cfg),
+        operation_timeout = cfg.auth_timeout
+    )
 end
 
 function _checked_token_provider(cfg::ClientConfig)
@@ -291,7 +305,7 @@ function _checked_token_provider(cfg::ClientConfig)
 end
 
 "`Authorization` header value for a client; refuses a real key on an unencrypted emulator connection."
-function http_authorization(cfg::ClientConfig, audience::AbstractString, scope::AbstractString=cfg.scope)
+function http_authorization(cfg::ClientConfig, audience::AbstractString, scope::AbstractString = cfg.scope)
     _check_plaintext_credential(cfg)      # the credential may have been rotated since the client was created
     return http_authorization(cfg.credential, audience, scope)
 end
@@ -310,14 +324,18 @@ end
 # Error classification and retries
 # ---------------------------------------------------------------------------
 
-const RETRIABLE_CONDITIONS = Set(Symbol.([
-    "amqp:internal-error", "amqp:connection:forced", "amqp:connection:framing-error",
-    "amqp:link:detach-forced", "amqp:session:window-violation", "amqp:session:errant-link",
-    "amqp:socket-error", "amqp:closed", "amqp:resource-limit-exceeded",
-    "com.microsoft:server-busy", "com.microsoft:timeout", "com.microsoft:operation-cancelled",
-    "com.microsoft:container-close", "com.microsoft:store-lock-lost",
-    "amqp:link:redirect", "amqp:connection:redirect", "com.microsoft:partition-not-owned",
-]))
+const RETRIABLE_CONDITIONS = Set(
+    Symbol.(
+        [
+            "amqp:internal-error", "amqp:connection:forced", "amqp:connection:framing-error",
+            "amqp:link:detach-forced", "amqp:session:window-violation", "amqp:session:errant-link",
+            "amqp:socket-error", "amqp:closed", "amqp:resource-limit-exceeded",
+            "com.microsoft:server-busy", "com.microsoft:timeout", "com.microsoft:operation-cancelled",
+            "com.microsoft:container-close", "com.microsoft:store-lock-lost",
+            "amqp:link:redirect", "amqp:connection:redirect", "com.microsoft:partition-not-owned",
+        ]
+    )
+)
 
 """
     error_kind(err) -> Symbol
@@ -341,8 +359,10 @@ function error_kind(err)
     c == "amqp:link:message-size-exceeded" && return :message_size
     c == "com.microsoft:server-busy" && return :server_busy
     c == "amqp:resource-limit-exceeded" && return :quota
-    c in ("com.microsoft:argument-error", "com.microsoft:argument-out-of-range", "amqp:invalid-field",
-        "amqp:not-implemented", "amqp:not-allowed", "amqp:decode-error") && return :argument
+    c in (
+        "com.microsoft:argument-error", "com.microsoft:argument-out-of-range", "amqp:invalid-field",
+        "amqp:not-implemented", "amqp:not-allowed", "amqp:decode-error",
+    ) && return :argument
     c == "amqp:link:stolen" && return :link_stolen
     c == "com.microsoft:entity-disabled" && return :entity_disabled
     c == "com.microsoft:message-lock-lost" && return :lock_lost
@@ -357,14 +377,16 @@ end
 
 # TLS certificate problems are configuration errors: never retry them.
 _is_certificate_error(err) = err isa Exception && nameof(typeof(err)) in (:TLSError, :TLSHandshakeError) &&
-                             occursin(r"certificate|x509|verif"i, sprint(showerror, err))
+    occursin(r"certificate|x509|verif"i, sprint(showerror, err))
 
 # Failures to reach or keep talking to the endpoint (DNS, TCP, TLS, WebSocket).
 function _is_transport_error(err)
     (err isa Base.IOError || err isa EOFError || err isa ServiceRequestError) && return true
     n = nameof(typeof(err))
-    return n in (:TLSError, :TLSHandshakeError, :TLSHandshakeTimeoutError, :DNSError, :DeadlineExceededError,
-        :ConnectError, :WebSocketError, :SystemError, :OpError, :AddrError)
+    return n in (
+        :TLSError, :TLSHandshakeError, :TLSHandshakeTimeoutError, :DNSError, :DeadlineExceededError,
+        :ConnectError, :WebSocketError, :SystemError, :OpError, :AddrError,
+    )
 end
 
 "Whether an error may succeed when retried."
@@ -382,8 +404,10 @@ end
 Run `f()`; on retriable failures back off and try again, up to
 `retry.retry_total` retries. The final error is passed through `map_error`.
 """
-function run_with_retry(f, retry::RetryOptions, is_closed::Function; map_error=identity,
-    operation::AbstractString="operation", deadline::Union{Nothing,Float64}=nothing)
+function run_with_retry(
+        f, retry::RetryOptions, is_closed::Function; map_error = identity,
+        operation::AbstractString = "operation", deadline::Union{Nothing, Float64} = nothing
+    )
     attempt = 0
     while true
         try
@@ -405,6 +429,7 @@ function run_with_retry(f, retry::RetryOptions, is_closed::Function; map_error=i
             sleep(delay)
         end
     end
+    return
 end
 
 end # module

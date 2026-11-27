@@ -18,18 +18,22 @@ macro str_enum(name, args...)
     pairs = [:($s => $v) for (s, v) in zip(syms, vals)]
     body = quote
         @enum T $(syms...)
-        const VALUES = Dict{T,String}($(pairs...))
+        const VALUES = Dict{T, String}($(pairs...))
     end
-    return esc(Expr(:toplevel, Expr(:module, true, name, body),
-        :(enum_value(x::$name.T) = $name.VALUES[x]),
-        :(_enum_type(::Type{$name.T}) = $name)))
+    return esc(
+        Expr(
+            :toplevel, Expr(:module, true, name, body),
+            :(enum_value(x::$name.T) = $name.VALUES[x]),
+            :(_enum_type(::Type{$name.T}) = $name)
+        )
+    )
 end
 
 enum_value(x::AbstractString) = String(x)
 enum_value(::Nothing) = nothing
 
 "Parse a service string into enum type `E` (case-insensitive); unknown values give `nothing`."
-function enum_parse(::Type{E}, s) where {E<:Enum}
+function enum_parse(::Type{E}, s) where {E <: Enum}
     s isa AbstractString || return nothing
     ls = lowercase(s)
     for (k, v) in _enum_type(E).VALUES
@@ -63,31 +67,31 @@ end
 HTTP content headers stored with a blob. `content_md5` is the raw 16-byte digest.
 """
 Base.@kwdef mutable struct ContentSettings
-    content_type::Union{Nothing,String} = nothing
-    content_encoding::Union{Nothing,String} = nothing
-    content_language::Union{Nothing,String} = nothing
-    content_disposition::Union{Nothing,String} = nothing
-    cache_control::Union{Nothing,String} = nothing
-    content_md5::Union{Nothing,Vector{UInt8}} = nothing
+    content_type::Union{Nothing, String} = nothing
+    content_encoding::Union{Nothing, String} = nothing
+    content_language::Union{Nothing, String} = nothing
+    content_disposition::Union{Nothing, String} = nothing
+    cache_control::Union{Nothing, String} = nothing
+    content_md5::Union{Nothing, Vector{UInt8}} = nothing
 end
 
 "Lease status (`\"locked\"`/`\"unlocked\"`), state (`\"available\"`, `\"leased\"`, …) and duration (`\"infinite\"`/`\"fixed\"`)."
 Base.@kwdef mutable struct LeaseProperties
-    status::Union{Nothing,String} = nothing
-    state::Union{Nothing,String} = nothing
-    duration::Union{Nothing,String} = nothing
+    status::Union{Nothing, String} = nothing
+    state::Union{Nothing, String} = nothing
+    duration::Union{Nothing, String} = nothing
 end
 
 "Properties of the last copy operation into a blob."
 Base.@kwdef mutable struct CopyProperties
-    id::Union{Nothing,String} = nothing
-    source::Union{Nothing,String} = nothing
-    status::Union{Nothing,String} = nothing
-    progress::Union{Nothing,String} = nothing
-    completion_time::Union{Nothing,DateTime} = nothing
-    status_description::Union{Nothing,String} = nothing
-    incremental_copy::Union{Nothing,Bool} = nothing
-    destination_snapshot::Union{Nothing,String} = nothing
+    id::Union{Nothing, String} = nothing
+    source::Union{Nothing, String} = nothing
+    status::Union{Nothing, String} = nothing
+    progress::Union{Nothing, String} = nothing
+    completion_time::Union{Nothing, DateTime} = nothing
+    status_description::Union{Nothing, String} = nothing
+    incremental_copy::Union{Nothing, Bool} = nothing
+    destination_snapshot::Union{Nothing, String} = nothing
 end
 
 """
@@ -97,7 +101,7 @@ A blob's time-based retention policy (`policy_mode` is a
 [`BlobImmutabilityPolicyMode`](@ref) value).
 """
 Base.@kwdef mutable struct ImmutabilityPolicy
-    expiry_time::Union{Nothing,DateTime} = nothing
+    expiry_time::Union{Nothing, DateTime} = nothing
     policy_mode::Any = nothing
 end
 
@@ -110,43 +114,45 @@ by `get_blob_properties`, `list_blobs` and a downloader's `properties`.
 Base.@kwdef mutable struct BlobProperties
     name::String = ""
     container::String = ""
-    snapshot::Union{Nothing,String} = nothing
-    version_id::Union{Nothing,String} = nothing
-    is_current_version::Union{Nothing,Bool} = nothing
-    blob_type::Union{Nothing,BlobType.T} = nothing
+    snapshot::Union{Nothing, String} = nothing
+    version_id::Union{Nothing, String} = nothing
+    is_current_version::Union{Nothing, Bool} = nothing
+    blob_type::Union{Nothing, BlobType.T} = nothing
     metadata::CaseInsensitiveDict{String} = CaseInsensitiveDict{String}()
-    last_modified::Union{Nothing,DateTime} = nothing
-    etag::Union{Nothing,String} = nothing
+    last_modified::Union{Nothing, DateTime} = nothing
+    etag::Union{Nothing, String} = nothing
     size::Int64 = 0
-    content_range::Union{Nothing,String} = nothing
-    append_blob_committed_block_count::Union{Nothing,Int} = nothing
-    is_append_blob_sealed::Union{Nothing,Bool} = nothing
-    page_blob_sequence_number::Union{Nothing,Int64} = nothing
-    server_encrypted::Union{Nothing,Bool} = nothing
+    content_range::Union{Nothing, String} = nothing
+    append_blob_committed_block_count::Union{Nothing, Int} = nothing
+    is_append_blob_sealed::Union{Nothing, Bool} = nothing
+    page_blob_sequence_number::Union{Nothing, Int64} = nothing
+    server_encrypted::Union{Nothing, Bool} = nothing
     copy::CopyProperties = CopyProperties()
     content_settings::ContentSettings = ContentSettings()
     lease::LeaseProperties = LeaseProperties()
-    blob_tier::Union{Nothing,String} = nothing
-    rehydrate_priority::Union{Nothing,String} = nothing
-    blob_tier_change_time::Union{Nothing,DateTime} = nothing
-    blob_tier_inferred::Union{Nothing,Bool} = nothing
+    blob_tier::Union{Nothing, String} = nothing
+    rehydrate_priority::Union{Nothing, String} = nothing
+    blob_tier_change_time::Union{Nothing, DateTime} = nothing
+    blob_tier_inferred::Union{Nothing, Bool} = nothing
     deleted::Bool = false
-    deleted_time::Union{Nothing,DateTime} = nothing
-    remaining_retention_days::Union{Nothing,Int} = nothing
-    creation_time::Union{Nothing,DateTime} = nothing
-    archive_status::Union{Nothing,String} = nothing
-    encryption_key_sha256::Union{Nothing,String} = nothing
-    encryption_scope::Union{Nothing,String} = nothing
-    request_server_encrypted::Union{Nothing,Bool} = nothing
-    last_accessed_on::Union{Nothing,DateTime} = nothing
-    tag_count::Union{Nothing,Int} = nothing
-    tags::Union{Nothing,Dict{String,String}} = nothing
+    deleted_time::Union{Nothing, DateTime} = nothing
+    remaining_retention_days::Union{Nothing, Int} = nothing
+    creation_time::Union{Nothing, DateTime} = nothing
+    archive_status::Union{Nothing, String} = nothing
+    encryption_key_sha256::Union{Nothing, String} = nothing
+    encryption_scope::Union{Nothing, String} = nothing
+    request_server_encrypted::Union{Nothing, Bool} = nothing
+    last_accessed_on::Union{Nothing, DateTime} = nothing
+    tag_count::Union{Nothing, Int} = nothing
+    tags::Union{Nothing, Dict{String, String}} = nothing
     immutability_policy::ImmutabilityPolicy = ImmutabilityPolicy()
-    has_legal_hold::Union{Nothing,Bool} = nothing
-    has_versions_only::Union{Nothing,Bool} = nothing
+    has_legal_hold::Union{Nothing, Bool} = nothing
+    has_versions_only::Union{Nothing, Bool} = nothing
 end
-Base.show(io::IO, p::BlobProperties) = print(io, "BlobProperties(", repr(p.name), ", size=", p.size,
-    p.blob_type === nothing ? "" : ", " * enum_value(p.blob_type), p.snapshot === nothing ? "" : ", snapshot=" * p.snapshot, ")")
+Base.show(io::IO, p::BlobProperties) = print(
+    io, "BlobProperties(", repr(p.name), ", size=", p.size,
+    p.blob_type === nothing ? "" : ", " * enum_value(p.blob_type), p.snapshot === nothing ? "" : ", snapshot=" * p.snapshot, ")"
+)
 
 """
     ContainerProperties
@@ -155,20 +161,20 @@ Properties of a container (Python: `azure.storage.blob.ContainerProperties`).
 """
 Base.@kwdef mutable struct ContainerProperties
     name::String = ""
-    last_modified::Union{Nothing,DateTime} = nothing
-    etag::Union{Nothing,String} = nothing
+    last_modified::Union{Nothing, DateTime} = nothing
+    etag::Union{Nothing, String} = nothing
     lease::LeaseProperties = LeaseProperties()
-    public_access::Union{Nothing,PublicAccess.T} = nothing
-    has_immutability_policy::Union{Nothing,Bool} = nothing
-    has_legal_hold::Union{Nothing,Bool} = nothing
+    public_access::Union{Nothing, PublicAccess.T} = nothing
+    has_immutability_policy::Union{Nothing, Bool} = nothing
+    has_legal_hold::Union{Nothing, Bool} = nothing
     deleted::Bool = false
-    deleted_time::Union{Nothing,DateTime} = nothing
-    remaining_retention_days::Union{Nothing,Int} = nothing
-    version::Union{Nothing,String} = nothing
+    deleted_time::Union{Nothing, DateTime} = nothing
+    remaining_retention_days::Union{Nothing, Int} = nothing
+    version::Union{Nothing, String} = nothing
     metadata::CaseInsensitiveDict{String} = CaseInsensitiveDict{String}()
-    default_encryption_scope::Union{Nothing,String} = nothing
-    prevent_encryption_scope_override::Union{Nothing,Bool} = nothing
-    immutable_storage_with_versioning_enabled::Union{Nothing,Bool} = nothing
+    default_encryption_scope::Union{Nothing, String} = nothing
+    prevent_encryption_scope_override::Union{Nothing, Bool} = nothing
+    immutable_storage_with_versioning_enabled::Union{Nothing, Bool} = nothing
 end
 Base.show(io::IO, p::ContainerProperties) = print(io, "ContainerProperties(", repr(p.name), p.deleted ? ", deleted" : "", ")")
 
@@ -181,11 +187,13 @@ A block of a block blob, used with `commit_block_list` and returned by
 mutable struct BlobBlock
     id::String
     state::BlockState.T
-    size::Union{Nothing,Int64}
+    size::Union{Nothing, Int64}
 end
-BlobBlock(block_id::AbstractString, state::BlockState.T=BlockState.LATEST) = BlobBlock(String(block_id), state, nothing)
-Base.show(io::IO, b::BlobBlock) = print(io, "BlobBlock(", repr(b.id), ", ", enum_value(b.state),
-    b.size === nothing ? "" : ", size=$(b.size)", ")")
+BlobBlock(block_id::AbstractString, state::BlockState.T = BlockState.LATEST) = BlobBlock(String(block_id), state, nothing)
+Base.show(io::IO, b::BlobBlock) = print(
+    io, "BlobBlock(", repr(b.id), ", ", enum_value(b.state),
+    b.size === nothing ? "" : ", size=$(b.size)", ")"
+)
 
 """
     PageRange(start, stop; cleared=false)
@@ -198,7 +206,7 @@ struct PageRange
     stop::Int64
     cleared::Bool
 end
-PageRange(start::Integer, stop::Integer; cleared::Bool=false) = PageRange(Int64(start), Int64(stop), cleared)
+PageRange(start::Integer, stop::Integer; cleared::Bool = false) = PageRange(Int64(start), Int64(stop), cleared)
 
 """
     AccessPolicy(; permission=nothing, expiry=nothing, start=nothing)
@@ -215,7 +223,7 @@ end
 "A container access policy together with its identifier."
 struct SignedIdentifier
     id::String
-    access_policy::Union{Nothing,AccessPolicy}
+    access_policy::Union{Nothing, AccessPolicy}
 end
 
 """
@@ -251,17 +259,19 @@ Base.@kwdef mutable struct UserDelegationKey
     signed_expiry::String = ""
     signed_service::String = ""
     signed_version::String = ""
-    signed_delegated_user_tid::Union{Nothing,String} = nothing
+    signed_delegated_user_tid::Union{Nothing, String} = nothing
     value::String = ""
 end
-Base.show(io::IO, k::UserDelegationKey) = print(io, "UserDelegationKey(signed_oid=", repr(k.signed_oid),
-    ", signed_expiry=", repr(k.signed_expiry), ", value=<redacted>)")
+Base.show(io::IO, k::UserDelegationKey) = print(
+    io, "UserDelegationKey(signed_oid=", repr(k.signed_oid),
+    ", signed_expiry=", repr(k.signed_expiry), ", value=<redacted>)"
+)
 
 "A blob returned by `find_blobs_by_tags`: `name`, `container_name` and matching `tags`."
 struct FilteredBlob
     name::String
     container_name::String
-    tags::Dict{String,String}
+    tags::Dict{String, String}
 end
 
 # --- service properties ----------------------------------------------------------
@@ -269,7 +279,7 @@ end
 "Retention policy for analytics logs/metrics or soft delete."
 Base.@kwdef mutable struct RetentionPolicy
     enabled::Bool = false
-    days::Union{Nothing,Int} = nothing
+    days::Union{Nothing, Int} = nothing
 end
 
 "Azure Analytics logging settings."
@@ -285,7 +295,7 @@ end
 Base.@kwdef mutable struct Metrics
     version::String = "1.0"
     enabled::Bool = false
-    include_apis::Union{Nothing,Bool} = nothing
+    include_apis::Union{Nothing, Bool} = nothing
     retention_policy::RetentionPolicy = RetentionPolicy()
 end
 
@@ -299,34 +309,44 @@ mutable struct CorsRule
     exposed_headers::Vector{String}
     max_age_in_seconds::Int
 end
-CorsRule(allowed_origins, allowed_methods; allowed_headers=String[], exposed_headers=String[], max_age_in_seconds::Integer=0) =
-    CorsRule(String.(collect(allowed_origins)), String.(collect(allowed_methods)), String.(collect(allowed_headers)),
-        String.(collect(exposed_headers)), Int(max_age_in_seconds))
+CorsRule(allowed_origins, allowed_methods; allowed_headers = String[], exposed_headers = String[], max_age_in_seconds::Integer = 0) =
+    CorsRule(
+    String.(collect(allowed_origins)), String.(collect(allowed_methods)), String.(collect(allowed_headers)),
+    String.(collect(exposed_headers)), Int(max_age_in_seconds)
+)
 
 "Static website hosting settings."
 Base.@kwdef mutable struct StaticWebsite
     enabled::Bool = false
-    index_document::Union{Nothing,String} = nothing
-    error_document404_path::Union{Nothing,String} = nothing
-    default_index_document_path::Union{Nothing,String} = nothing
+    index_document::Union{Nothing, String} = nothing
+    error_document404_path::Union{Nothing, String} = nothing
+    default_index_document_path::Union{Nothing, String} = nothing
 end
 
 # --- SAS permissions -------------------------------------------------------------
 
 # (letter, field) in the order the service expects.
-const _BLOB_PERMS = (('r', :read), ('a', :add), ('c', :create), ('w', :write), ('d', :delete),
+const _BLOB_PERMS = (
+    ('r', :read), ('a', :add), ('c', :create), ('w', :write), ('d', :delete),
     ('x', :delete_previous_version), ('y', :permanent_delete), ('t', :tag), ('m', :move), ('e', :execute),
-    ('i', :set_immutability_policy))
-const _CONTAINER_PERMS = (('r', :read), ('a', :add), ('c', :create), ('w', :write), ('d', :delete),
+    ('i', :set_immutability_policy),
+)
+const _CONTAINER_PERMS = (
+    ('r', :read), ('a', :add), ('c', :create), ('w', :write), ('d', :delete),
     ('x', :delete_previous_version), ('y', :permanent_delete), ('l', :list), ('t', :tag), ('f', :filter_by_tags),
-    ('m', :move), ('e', :execute), ('i', :set_immutability_policy))
-const _ACCOUNT_PERMS = (('r', :read), ('w', :write), ('d', :delete), ('x', :delete_previous_version),
+    ('m', :move), ('e', :execute), ('i', :set_immutability_policy),
+)
+const _ACCOUNT_PERMS = (
+    ('r', :read), ('w', :write), ('d', :delete), ('x', :delete_previous_version),
     ('y', :permanent_delete), ('l', :list), ('a', :add), ('c', :create), ('u', :update), ('p', :process),
-    ('t', :tag), ('f', :filter_by_tags), ('i', :set_immutability_policy))
+    ('t', :tag), ('f', :filter_by_tags), ('i', :set_immutability_policy),
+)
 
-for (T, table, doc) in ((:BlobSasPermissions, :_BLOB_PERMS, "a blob SAS"),
-    (:ContainerSasPermissions, :_CONTAINER_PERMS, "a container SAS"),
-    (:AccountSasPermissions, :_ACCOUNT_PERMS, "an account SAS"))
+for (T, table, doc) in (
+        (:BlobSasPermissions, :_BLOB_PERMS, "a blob SAS"),
+        (:ContainerSasPermissions, :_CONTAINER_PERMS, "a container SAS"),
+        (:AccountSasPermissions, :_ACCOUNT_PERMS, "an account SAS"),
+    )
     fields = [f for (_, f) in eval(table)]
     @eval begin
         """
@@ -364,9 +384,11 @@ struct ResourceTypes
     container::Bool
     object::Bool
 end
-ResourceTypes(; service::Bool=false, container::Bool=false, object::Bool=false) = ResourceTypes(service, container, object)
-ResourceTypes(s::AbstractString) = (all(in("sco"), s) || throw(ArgumentError("invalid resource types $(repr(s))"));
-                                    ResourceTypes('s' in s, 'c' in s, 'o' in s))
+ResourceTypes(; service::Bool = false, container::Bool = false, object::Bool = false) = ResourceTypes(service, container, object)
+ResourceTypes(s::AbstractString) = (
+    all(in("sco"), s) || throw(ArgumentError("invalid resource types $(repr(s))"));
+    ResourceTypes('s' in s, 'c' in s, 'o' in s)
+)
 Base.string(r::ResourceTypes) = string(r.service ? "s" : "", r.container ? "c" : "", r.object ? "o" : "")
 
 """
@@ -380,7 +402,7 @@ struct Services
     table::Bool
     fileshare::Bool
 end
-Services(; blob::Bool=false, queue::Bool=false, table::Bool=false, fileshare::Bool=false) = Services(blob, queue, table, fileshare)
+Services(; blob::Bool = false, queue::Bool = false, table::Bool = false, fileshare::Bool = false) = Services(blob, queue, table, fileshare)
 Base.string(s::Services) = string(s.blob ? "b" : "", s.queue ? "q" : "", s.table ? "t" : "", s.fileshare ? "f" : "")
 
 _perm_string(p) = p === nothing ? nothing : p isa AbstractString ? String(p) : string(p)

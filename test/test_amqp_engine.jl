@@ -5,9 +5,9 @@ using Test, Dates
 isdefined(@__MODULE__, :MockBroker) || include("mock_broker.jl")
 isdefined(@__MODULE__, :TestCerts) || include("certs.jl")
 
-function raw_connection(b; scheme=:amqp, port=b.port, kw...)
-    tc = A.TransportConfig(scheme=scheme, host="localhost", port=port; kw...)
-    return A.connect(tc, A.ConnectionConfig(hostname="localhost"))
+function raw_connection(b; scheme = :amqp, port = b.port, kw...)
+    tc = A.TransportConfig(scheme = scheme, host = "localhost", port = port; kw...)
+    return A.connect(tc, A.ConnectionConfig(hostname = "localhost"))
 end
 
 @testset "AMQP engine" begin
@@ -17,7 +17,7 @@ end
     cert, key, _ = TestCerts.self_signed("localhost")
     write(joinpath(dir, "cert.pem"), cert)
     write(joinpath(dir, "key.pem"), key)
-    MockBroker.start!(b; tls_cert=joinpath(dir, "cert.pem"), tls_key=joinpath(dir, "key.pem"), websocket=true)
+    MockBroker.start!(b; tls_cert = joinpath(dir, "cert.pem"), tls_key = joinpath(dir, "key.pem"), websocket = true)
     try
         @testset "connection, session and links" begin
             conn = raw_connection(b)
@@ -28,15 +28,15 @@ end
             @test timedwait(() -> A.link_credit(snd) == 1000, 5.0) === :ok
             @test A.send_transfer(snd, A.encode_message(A.AMQPMessage(UInt8[1]))) isa A.Accepted
             # presettled
-            @test A.send_transfer(snd, A.encode_message(A.AMQPMessage(UInt8[2])); settled=true) === nothing
-            rcv = A.attach_receiver(s, "r", "q"; snd_settle_mode=A.SND_SETTLED)
-            @test A.receive_delivery(rcv; timeout=0.2) === nothing        # no credit yet
+            @test A.send_transfer(snd, A.encode_message(A.AMQPMessage(UInt8[2])); settled = true) === nothing
+            rcv = A.attach_receiver(s, "r", "q"; snd_settle_mode = A.SND_SETTLED)
+            @test A.receive_delivery(rcv; timeout = 0.2) === nothing        # no credit yet
             A.flow!(rcv, 10)
-            d1 = A.receive_delivery(rcv; timeout=5)
-            d2 = A.receive_delivery(rcv; timeout=5)
+            d1 = A.receive_delivery(rcv; timeout = 5)
+            d2 = A.receive_delivery(rcv; timeout = 5)
             @test A.body_bytes(A.decode_delivery(d1)) == UInt8[1]
             @test A.body_bytes(A.decode_delivery(d2)) == UInt8[2]
-            @test A.drain!(rcv; timeout=5)
+            @test A.drain!(rcv; timeout = 5)
             @test A.link_credit(rcv) == 0
             A.detach(rcv)
             @test !A.is_attached(rcv)
@@ -68,8 +68,8 @@ end
             snd = A.attach_sender(s, "s", "q")
             payload = rand(UInt8, 300_000)       # > 64 KiB broker frames
             @test A.send_transfer(snd, A.encode_message(A.AMQPMessage(payload))) isa A.Accepted
-            rcv = A.attach_receiver(s, "r", "q"; snd_settle_mode=A.SND_SETTLED, prefetch=5)
-            d = A.receive_delivery(rcv; timeout=10)
+            rcv = A.attach_receiver(s, "r", "q"; snd_settle_mode = A.SND_SETTLED, prefetch = 5)
+            d = A.receive_delivery(rcv; timeout = 10)
             @test A.body_bytes(A.decode_delivery(d)) == payload
             close(conn)
             b.split_outgoing = 0
@@ -98,9 +98,9 @@ end
                 Threads.@spawn results[i] = A.send_transfer(snd, A.encode_message(A.AMQPMessage(Vector{UInt8}(string(i)))))
             end
             @test all(r -> r isa A.Accepted, results)
-            rcv = A.attach_receiver(s, "r", "q"; snd_settle_mode=A.SND_SETTLED, prefetch=100)
+            rcv = A.attach_receiver(s, "r", "q"; snd_settle_mode = A.SND_SETTLED, prefetch = 100)
             got = Set{String}()
-            while (d = A.receive_delivery(rcv; timeout=2)) !== nothing
+            while (d = A.receive_delivery(rcv; timeout = 2)) !== nothing
                 push!(got, String(A.body_bytes(A.decode_delivery(d))))
             end
             @test got == Set(string.(1:500))
@@ -110,9 +110,9 @@ end
         @testset "connection loss fails waiters promptly" begin
             conn = raw_connection(b)
             s = A.begin_session(conn)
-            rcv = A.attach_receiver(s, "r", "q"; prefetch=1)
+            rcv = A.attach_receiver(s, "r", "q"; prefetch = 1)
             t = Threads.@spawn try
-                A.receive_delivery(rcv; timeout=30)
+                A.receive_delivery(rcv; timeout = 30)
             catch e
                 e
             end
@@ -125,26 +125,34 @@ end
         end
 
         @testset "TLS" begin
-            conn = raw_connection(b; scheme=:amqps, port=b.tls_port, ca_file=joinpath(dir, "cert.pem"))
+            conn = raw_connection(b; scheme = :amqps, port = b.tls_port, ca_file = joinpath(dir, "cert.pem"))
             @test isopen(conn)
             s = A.begin_session(conn)
             @test A.send_transfer(A.attach_sender(s, "s", "q"), A.encode_message(A.AMQPMessage(UInt8[7]))) isa A.Accepted
             close(conn)
             # untrusted certificate is refused
-            @test_throws Exception raw_connection(b; scheme=:amqps, port=b.tls_port)
+            @test_throws Exception raw_connection(b; scheme = :amqps, port = b.tls_port)
             # the certificate must match the host name (dialled through a custom endpoint)
-            @test_throws Exception A.connect(A.TransportConfig(scheme=:amqps, host="other.test",
-                    custom_endpoint_address="127.0.0.1:$(b.tls_port)", ca_file=joinpath(dir, "cert.pem")),
-                A.ConnectionConfig(hostname="other.test"))
-            conn = A.connect(A.TransportConfig(scheme=:amqps, host="localhost",
-                    custom_endpoint_address="127.0.0.1:$(b.tls_port)", ca_file=joinpath(dir, "cert.pem")),
-                A.ConnectionConfig(hostname="localhost"))
+            @test_throws Exception A.connect(
+                A.TransportConfig(
+                    scheme = :amqps, host = "other.test",
+                    custom_endpoint_address = "127.0.0.1:$(b.tls_port)", ca_file = joinpath(dir, "cert.pem")
+                ),
+                A.ConnectionConfig(hostname = "other.test")
+            )
+            conn = A.connect(
+                A.TransportConfig(
+                    scheme = :amqps, host = "localhost",
+                    custom_endpoint_address = "127.0.0.1:$(b.tls_port)", ca_file = joinpath(dir, "cert.pem")
+                ),
+                A.ConnectionConfig(hostname = "localhost")
+            )
             @test isopen(conn)
             close(conn)
         end
 
         @testset "WebSocket" begin
-            conn = raw_connection(b; scheme=:ws, port=b.ws_port)
+            conn = raw_connection(b; scheme = :ws, port = b.ws_port)
             s = A.begin_session(conn)
             @test A.send_transfer(A.attach_sender(s, "s", "q"), A.encode_message(A.AMQPMessage(UInt8[8]))) isa A.Accepted
             close(conn)
@@ -152,18 +160,25 @@ end
 
         @testset "secure WebSocket with a custom CA through the Service Bus client" begin
             cred = AzureSDK.AzureCore.AzureNamedKeyCredential("RootManageSharedAccessKey", "secret")
-            client = AzureSDK.ServiceBus.ServiceBusClient("localhost:$(b.wss_port)", cred;
-                transport_type=AzureSDK.ServiceBus.TransportType.AmqpOverWebsocket,
-                connection_verify=joinpath(dir, "cert.pem"), retry_total=0)
+            client = AzureSDK.ServiceBus.ServiceBusClient(
+                "localhost:$(b.wss_port)", cred;
+                transport_type = AzureSDK.ServiceBus.TransportType.AmqpOverWebsocket,
+                connection_verify = joinpath(dir, "cert.pem"), retry_total = 0
+            )
             @test client.conn.transport_config.scheme === :wss
-            AzureSDK.ServiceBus.send_messages(AzureSDK.ServiceBus.get_queue_sender(client, "q"),
-                AzureSDK.ServiceBus.ServiceBusMessage("over wss"))
+            AzureSDK.ServiceBus.send_messages(
+                AzureSDK.ServiceBus.get_queue_sender(client, "q"),
+                AzureSDK.ServiceBus.ServiceBusMessage("over wss")
+            )
             close(client)
             # without the CA the handshake fails and is not retried
-            client = AzureSDK.ServiceBus.ServiceBusClient("localhost:$(b.wss_port)", cred;
-                transport_type=AzureSDK.ServiceBus.TransportType.AmqpOverWebsocket)
+            client = AzureSDK.ServiceBus.ServiceBusClient(
+                "localhost:$(b.wss_port)", cred;
+                transport_type = AzureSDK.ServiceBus.TransportType.AmqpOverWebsocket
+            )
             @test_throws AzureSDK.AzureCore.AzureError AzureSDK.ServiceBus.send_messages(
-                AzureSDK.ServiceBus.get_queue_sender(client, "q"), AzureSDK.ServiceBus.ServiceBusMessage("x"))
+                AzureSDK.ServiceBus.get_queue_sender(client, "q"), AzureSDK.ServiceBus.ServiceBusMessage("x")
+            )
             close(client)
         end
 
@@ -182,8 +197,10 @@ end
         @testset "CBS tokens are refreshed before they expire" begin
             issued = Ref(0)
             provider = aud -> (issued[] += 1; ("token-$(issued[])", "jwt", time() + 2.0))
-            cc = A.ClientConnection(A.TransportConfig(scheme=:amqp, host="localhost", port=b.port);
-                hostname="localhost", token_provider=provider)
+            cc = A.ClientConnection(
+                A.TransportConfig(scheme = :amqp, host = "localhost", port = b.port);
+                hostname = "localhost", token_provider = provider
+            )
             A.authorize!(cc, "sb://localhost/q")
             @test issued[] == 1
             @test timedwait(() -> issued[] >= 3, 10.0) === :ok
@@ -196,26 +213,36 @@ end
         @testset "CBS put-token and management request/response" begin
             conn = raw_connection(b)
             s = A.begin_session(conn)
-            cbs = A.open_management_link(s, "\$cbs"; reply_to="cbs")
-            @test A.put_token(cbs, "sb://localhost/q", "tok"; token_type="jwt", expires_on=time() + 60) == 202
+            cbs = A.open_management_link(s, "\$cbs"; reply_to = "cbs")
+            @test A.put_token(cbs, "sb://localhost/q", "tok"; token_type = "jwt", expires_on = time() + 60) == 202
             b.reject_tokens = true
             @test_throws A.AMQPException A.put_token(cbs, "sb://localhost/q", "tok")
             b.reject_tokens = false
             mgmt = A.open_management_link(s, "q/\$management")
             # far more requests than the link's prefetch: credit must be replenished
-            statuses = [A.response_status(A.request(mgmt, A.AMQPMessage(body_type=:value,
-                body=Dict{String,Any}("session-id" => "none"),
-                application_properties=Dict{String,Any}("operation" => "com.microsoft:get-session-state")); timeout=5))[1]
-                        for _ in 1:150]
+            statuses = [
+                A.response_status(
+                    A.request(
+                        mgmt, A.AMQPMessage(
+                            body_type = :value,
+                            body = Dict{String, Any}("session-id" => "none"),
+                            application_properties = Dict{String, Any}("operation" => "com.microsoft:get-session-state")
+                        ); timeout = 5
+                    )
+                )[1]
+                    for _ in 1:150
+            ]
             @test all(==(200), statuses)
-            @test all(==(202), [A.put_token(cbs, "sb://localhost/q", "tok"; timeout=5) for _ in 1:120])
+            @test all(==(202), [A.put_token(cbs, "sb://localhost/q", "tok"; timeout = 5) for _ in 1:120])
             close(conn)
         end
 
         @testset "ClientConnection reconnects and re-authorizes" begin
             provider = aud -> ("token-for-$aud", "jwt", time() + 3600.0)
-            cc = A.ClientConnection(A.TransportConfig(scheme=:amqp, host="localhost", port=b.port);
-                hostname="localhost", token_provider=provider)
+            cc = A.ClientConnection(
+                A.TransportConfig(scheme = :amqp, host = "localhost", port = b.port);
+                hostname = "localhost", token_provider = provider
+            )
             A.authorize!(cc, "sb://localhost/q")
             _, _, g1 = A.acquire!(cc)
             n = length(b.put_tokens)

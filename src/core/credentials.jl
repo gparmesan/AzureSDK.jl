@@ -22,14 +22,18 @@ struct AccessTokenInfo
     token::String
     expires_on::Int
     token_type::String
-    refresh_on::Union{Nothing,Int}
+    refresh_on::Union{Nothing, Int}
 end
-AccessTokenInfo(token::AbstractString, expires_on::Integer; token_type::AbstractString="Bearer",
-    refresh_on::Union{Nothing,Integer}=nothing) =
+AccessTokenInfo(
+    token::AbstractString, expires_on::Integer; token_type::AbstractString = "Bearer",
+    refresh_on::Union{Nothing, Integer} = nothing
+) =
     AccessTokenInfo(String(token), Int(expires_on), String(token_type), refresh_on === nothing ? nothing : Int(refresh_on))
 function Base.show(io::IO, t::AccessTokenInfo)
-    print(io, "AccessTokenInfo(token=<redacted>, expires_on=", t.expires_on, ", token_type=", repr(t.token_type),
-        ", refresh_on=", t.refresh_on, ")")
+    return print(
+        io, "AccessTokenInfo(token=<redacted>, expires_on=", t.expires_on, ", token_type=", repr(t.token_type),
+        ", refresh_on=", t.refresh_on, ")"
+    )
 end
 
 """
@@ -59,9 +63,11 @@ function get_token_info end
 
 Request an access token for `scopes` (`azure.core.credentials.TokenCredential.get_token`).
 """
-function get_token(cred::TokenCredential, scopes::AbstractString...; claims=nothing, tenant_id=nothing,
-    enable_cae::Bool=false)
-    info = get_token_info(cred, scopes...; claims=claims, tenant_id=tenant_id, enable_cae=enable_cae)
+function get_token(
+        cred::TokenCredential, scopes::AbstractString...; claims = nothing, tenant_id = nothing,
+        enable_cae::Bool = false
+    )
+    info = get_token_info(cred, scopes...; claims = claims, tenant_id = tenant_id, enable_cae = enable_cae)
     return AccessToken(info.token, info.expires_on)
 end
 
@@ -100,7 +106,7 @@ end
 Base.show(io::IO, c::AzureNamedKeyCredential) = print(io, "AzureNamedKeyCredential(name=", repr(c.name), ", key=<redacted>)")
 
 "Return `(name = ..., key = ...)` of a named key credential."
-named_key(c::AzureNamedKeyCredential) = @lock c.lock (name=c.name, key=c.key)
+named_key(c::AzureNamedKeyCredential) = @lock c.lock (name = c.name, key = c.key)
 
 """
     AzureKeyCredential(key)
@@ -112,7 +118,7 @@ mutable struct AzureKeyCredential
     lock::ReentrantLock
 end
 AzureKeyCredential(key::AbstractString) = isempty(key) ? throw(ArgumentError("key must be a non-empty string")) :
-                                          AzureKeyCredential(String(key), ReentrantLock())
+    AzureKeyCredential(String(key), ReentrantLock())
 Base.show(io::IO, ::AzureKeyCredential) = print(io, "AzureKeyCredential(<redacted>)")
 
 """

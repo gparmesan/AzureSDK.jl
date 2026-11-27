@@ -6,7 +6,7 @@
 mutable struct _Source
     data::Any                      # AbstractVector{UInt8} or IO
     pos::Int64                     # bytes produced so far
-    total::Union{Nothing,Int64}    # known total length
+    total::Union{Nothing, Int64}    # known total length
 end
 
 function _Source(data, length)
@@ -36,7 +36,7 @@ end
 function _next_chunk!(s::_Source, n::Integer)
     if s.data isa AbstractVector{UInt8}
         stop = min(s.pos + n, s.total)
-        chunk = view(s.data, (s.pos+1):stop)
+        chunk = view(s.data, (s.pos + 1):stop)
         s.pos = stop
         return chunk
     end
@@ -104,9 +104,11 @@ end
 
 # --- upload -----------------------------------------------------------------------------------
 
-const _UPLOAD_OPTS = (:blob_type, :length, :metadata, :overwrite, :content_settings, :validate_content, :max_concurrency,
+const _UPLOAD_OPTS = (
+    :blob_type, :length, :metadata, :overwrite, :content_settings, :validate_content, :max_concurrency,
     :tags, :standard_blob_tier, :premium_page_blob_tier, :maxsize_condition, :lease, :immutability_policy,
-    :legal_hold, :progress_hook, :encoding, :timeout)
+    :legal_hold, :progress_hook, :encoding, :timeout,
+)
 
 """
     upload_blob(blob_client, data; blob_type=BlobType.BLOCKBLOB, length=nothing, metadata=nothing, overwrite=false,
@@ -152,7 +154,7 @@ end
 function _overwrite_conditions(o)
     get(o, :overwrite, false) && return o
     haskey(o, :match_condition) && return o
-    o2 = Dict{Symbol,Any}(o)
+    o2 = Dict{Symbol, Any}(o)
     o2[:match_condition] = MatchConditions.IfMissing
     return o2
 end
@@ -162,8 +164,10 @@ function _upload_block_blob(b::BlobClient, src::_Source, o)
     validate = get(o, :validate_content, false)
     hook = get(o, :progress_hook, nothing)
     cond = _overwrite_conditions(o)
-    common = vcat(_content_settings_headers(get(o, :content_settings, nothing)), _metadata_headers(get(o, :metadata, nothing)),
-        _tags_header(get(o, :tags, nothing)), _condition_headers(cond), _cpk_headers(cfg, o), _immutability_headers(o))
+    common = vcat(
+        _content_settings_headers(get(o, :content_settings, nothing)), _metadata_headers(get(o, :metadata, nothing)),
+        _tags_header(get(o, :tags, nothing)), _condition_headers(cond), _cpk_headers(cfg, o), _immutability_headers(o)
+    )
     tier = get(o, :standard_blob_tier, nothing)
     tier === nothing || push!(common, "x-ms-access-tier" => enum_value(tier))
     single = src.total !== nothing && src.total <= cfg.transfer[:max_single_put_size]
@@ -175,9 +179,11 @@ function _upload_block_blob(b::BlobClient, src::_Source, o)
     end
     if single
         body = first === nothing ? _next_chunk!(src, src.total) : first
-        h = vcat(Pair{String,String}["x-ms-blob-type" => "BlockBlob"], common, _md5_header(validate, body))
-        resp = _req(b, "PUT", _blob_path(b); headers=h, body=body, expected=(201,), timeout=_timeout(o),
-            operation="upload_blob")
+        h = vcat(Pair{String, String}["x-ms-blob-type" => "BlockBlob"], common, _md5_header(validate, body))
+        resp = _req(
+            b, "PUT", _blob_path(b); headers = h, body = body, expected = (201,), timeout = _timeout(o),
+            operation = "upload_blob"
+        )
         _check_md5_response(validate, body, resp)
         hook === nothing || hook(length(body), length(body))
         return response_dict(resp)
@@ -186,7 +192,7 @@ function _upload_block_blob(b::BlobClient, src::_Source, o)
     ids = String[]
     lk = ReentrantLock()
     counter = Ref{Int64}(0)
-    stage_opts = Dict{Symbol,Any}(k => v for (k, v) in o if k in (:lease, :cpk, :encryption_scope, :validate_content, :timeout))
+    stage_opts = Dict{Symbol, Any}(k => v for (k, v) in o if k in (:lease, :cpk, :encryption_scope, :validate_content, :timeout))
     produce = function (put)
         i = 0
         chunk = first
@@ -197,13 +203,18 @@ function _upload_block_blob(b::BlobClient, src::_Source, o)
             put((id, chunk))
             chunk = _next_chunk!(src, cfg.transfer[:max_block_size])
         end
+        return
     end
     _parallel_foreach(produce, get(o, :max_concurrency, 1)) do (id, chunk)
         stage_block(b, id, chunk; stage_opts...)
         _progress(hook, lk, counter, length(chunk), src.total)
     end
-    commit_opts = Dict{Symbol,Any}(k => v for (k, v) in cond if k in (_COND..., _CPK..., :content_settings, :metadata,
-        :tags, :standard_blob_tier, :immutability_policy, :legal_hold, :lease, :timeout))
+    commit_opts = Dict{Symbol, Any}(
+        k => v for (k, v) in cond if k in (
+                _COND..., _CPK..., :content_settings, :metadata,
+                :tags, :standard_blob_tier, :immutability_policy, :legal_hold, :lease, :timeout,
+            )
+    )
     return commit_block_list(b, ids; commit_opts...)
 end
 
@@ -212,13 +223,17 @@ function _upload_page_blob(b::BlobClient, src::_Source, o)
     src.total === nothing && throw(ArgumentError("Please specify the length of a page blob upload (length=...)"))
     total = src.total
     total % 512 == 0 || throw(ArgumentError("page blob size must be a multiple of 512, got $(total)"))
-    create_opts = Dict{Symbol,Any}(k => v for (k, v) in _overwrite_conditions(o) if k in (_COND..., _CPK...,
-        :content_settings, :metadata, :premium_page_blob_tier, :tags, :immutability_policy, :legal_hold, :lease, :timeout))
+    create_opts = Dict{Symbol, Any}(
+        k => v for (k, v) in _overwrite_conditions(o) if k in (
+                _COND..., _CPK...,
+                :content_settings, :metadata, :premium_page_blob_tier, :tags, :immutability_policy, :legal_hold, :lease, :timeout,
+            )
+    )
     result = create_page_blob(b, total; create_opts...)
     hook = get(o, :progress_hook, nothing)
     lk = ReentrantLock()
     counter = Ref{Int64}(0)
-    page_opts = Dict{Symbol,Any}(k => v for (k, v) in o if k in (:lease, :cpk, :encryption_scope, :validate_content, :timeout))
+    page_opts = Dict{Symbol, Any}(k => v for (k, v) in o if k in (:lease, :cpk, :encryption_scope, :validate_content, :timeout))
     last = Ref{Any}(result)
     produce = function (put)
         offset = 0
@@ -228,6 +243,7 @@ function _upload_page_blob(b::BlobClient, src::_Source, o)
             put((offset, chunk))
             offset += length(chunk)
         end
+        return
     end
     _parallel_foreach(produce, get(o, :max_concurrency, 1)) do (offset, chunk)
         if any(!iszero, chunk)
@@ -241,10 +257,18 @@ end
 
 function _upload_append_blob(b::BlobClient, src::_Source, o)
     cfg = b.config
-    create_opts = Dict{Symbol,Any}(k => v for (k, v) in o if k in (_COND..., _CPK..., :content_settings, :metadata,
-        :tags, :immutability_policy, :legal_hold, :lease, :timeout))
-    append_opts = Dict{Symbol,Any}(k => v for (k, v) in o if k in (_COND..., _CPK..., :validate_content,
-        :maxsize_condition, :lease, :timeout))
+    create_opts = Dict{Symbol, Any}(
+        k => v for (k, v) in o if k in (
+                _COND..., _CPK..., :content_settings, :metadata,
+                :tags, :immutability_policy, :legal_hold, :lease, :timeout,
+            )
+    )
+    append_opts = Dict{Symbol, Any}(
+        k => v for (k, v) in o if k in (
+                _COND..., _CPK..., :validate_content,
+                :maxsize_condition, :lease, :timeout,
+            )
+    )
     overwrite = get(o, :overwrite, false)
     result = overwrite ? create_append_blob(b; create_opts...) : nothing
     hook = get(o, :progress_hook, nothing)
@@ -253,10 +277,10 @@ function _upload_append_blob(b::BlobClient, src::_Source, o)
         # Nothing to append: just make sure the blob exists.
         if !overwrite
             try
-                result = create_append_blob(b; merge(create_opts, Dict{Symbol,Any}(:match_condition => MatchConditions.IfMissing))...)
+                result = create_append_blob(b; merge(create_opts, Dict{Symbol, Any}(:match_condition => MatchConditions.IfMissing))...)
             catch err
-                err isa Union{ResourceExistsError,ResourceModifiedError} || rethrow()
-                result = Dict{String,Any}()
+                err isa Union{ResourceExistsError, ResourceModifiedError} || rethrow()
+                result = Dict{String, Any}()
             end
         end
         return result
@@ -264,7 +288,7 @@ function _upload_append_blob(b::BlobClient, src::_Source, o)
     sent = 0
     position = nothing
     while !isempty(chunk)
-        opts = position === nothing ? append_opts : merge(append_opts, Dict{Symbol,Any}(:appendpos_condition => position))
+        opts = position === nothing ? append_opts : merge(append_opts, Dict{Symbol, Any}(:appendpos_condition => position))
         result = try
             append_block(b, chunk; opts...)
         catch err
@@ -300,11 +324,11 @@ mutable struct StorageStreamDownloader <: IO
     properties::BlobProperties
     size::Int64
     start::Int64                   # blob offset of the first byte to download
-    headers::Vector{Pair{String,String}}   # per-chunk request headers (lease, conditions, cpk)
-    query::Vector{Pair{String,String}}
+    headers::Vector{Pair{String, String}}   # per-chunk request headers (lease, conditions, cpk)
+    query::Vector{Pair{String, String}}
     validate::Bool
     max_concurrency::Int
-    encoding::Union{Nothing,String}
+    encoding::Union{Nothing, String}
     progress_hook::Any
     timeout::Any
     buffer::Vector{UInt8}
@@ -340,8 +364,12 @@ pinned to the blob's ETag so a concurrent modification is detected
 (`"UTF-8"`) [`readall`](@ref) returns a `String`.
 """
 function download_blob(b::BlobClient; kwargs...)
-    o = _opts(kwargs, _COND, _CPK, (:offset, :length, :version_id, :validate_content, :max_concurrency, :encoding,
-            :lease, :progress_hook, :timeout))
+    o = _opts(
+        kwargs, _COND, _CPK, (
+            :offset, :length, :version_id, :validate_content, :max_concurrency, :encoding,
+            :lease, :progress_hook, :timeout,
+        )
+    )
     cfg = b.config
     offset = get(o, :offset, nothing)
     len = get(o, :length, nothing)
@@ -359,12 +387,12 @@ function download_blob(b::BlobClient; kwargs...)
     len === nothing || (first_size = min(first_size, len))
     h = vcat(headers, ["x-ms-range" => _range_header(start, first_size)])
     validate && push!(h, "x-ms-range-get-content-md5" => "true")
-    resp = _req(b, "GET", _blob_path(b); query=q, headers=h, timeout=_timeout(o), raise=false)
+    resp = _req(b, "GET", _blob_path(b); query = q, headers = h, timeout = _timeout(o), raise = false)
     if resp.status == 416 && offset === nothing
         # Empty blob: a ranged GET is not satisfiable.
-        resp = _req(b, "GET", _blob_path(b); query=q, headers=headers, timeout=_timeout(o), raise=false)
+        resp = _req(b, "GET", _blob_path(b); query = q, headers = headers, timeout = _timeout(o), raise = false)
     end
-    200 <= resp.status < 300 || throw(storage_error(resp; operation="download_blob"))
+    200 <= resp.status < 300 || throw(storage_error(resp; operation = "download_blob"))
     body = resp.body
     validate && _verify_md5(resp, body)
     props = _blob_properties_from_headers(resp, b)
@@ -380,9 +408,11 @@ function download_blob(b::BlobClient; kwargs...)
     if !haskey(o, :etag) && props.etag !== nothing
         push!(chunk_headers, "If-Match" => props.etag)
     end
-    d = StorageStreamDownloader(b, b.blob_name, b.container_name, props, size, start, chunk_headers, q, validate,
+    d = StorageStreamDownloader(
+        b, b.blob_name, b.container_name, props, size, start, chunk_headers, q, validate,
         max(1, get(o, :max_concurrency, 1)), enc === nothing ? nothing : String(enc), get(o, :progress_hook, nothing),
-        _timeout(o), body, 1, length(body), 0, ReentrantLock())
+        _timeout(o), body, 1, length(body), 0, ReentrantLock()
+    )
     d.progress_hook === nothing || d.progress_hook(length(body), size)
     return d
 end
@@ -390,7 +420,7 @@ end
 function _verify_md5(resp, body)
     got = _hdr(resp, "Content-MD5")
     got === nothing && throw(ContentValidationError("validate_content=true but the response carried no Content-MD5"))
-    base64decode(got) == md5(body) ||
+    return base64decode(got) == md5(body) ||
         throw(ContentValidationError("MD5 mismatch: the downloaded content was corrupted in transit"))
 end
 
@@ -401,7 +431,7 @@ function _fetch_range(d::StorageStreamDownloader, rel::Int64, n::Int64)
     d.validate && push!(h, "x-ms-range-get-content-md5" => "true")
     attempt = 0
     while true
-        resp = _req(b, "GET", _blob_path(b); query=d.query, headers=h, timeout=d.timeout, operation="download_blob")
+        resp = _req(b, "GET", _blob_path(b); query = d.query, headers = h, timeout = d.timeout, operation = "download_blob")
         body = resp.body
         if length(body) == n
             d.validate && _verify_md5(resp, body)
@@ -412,14 +442,17 @@ function _fetch_range(d::StorageStreamDownloader, rel::Int64, n::Int64)
             throw(IncompleteReadError("received $(length(body)) of $(n) bytes for a blob range"))
         sleep(AzureCore.backoff_delay(b.config.retry, attempt))
     end
+    return
 end
 
-_chunk_size(d::StorageStreamDownloader) = Int64(d.validate ? min(d.client.config.transfer[:max_chunk_get_size], 4 * 1024 * 1024) :
-                                                d.client.config.transfer[:max_chunk_get_size])
+_chunk_size(d::StorageStreamDownloader) = Int64(
+    d.validate ? min(d.client.config.transfer[:max_chunk_get_size], 4 * 1024 * 1024) :
+        d.client.config.transfer[:max_chunk_get_size]
+)
 
 function _remaining_ranges(d::StorageStreamDownloader)
     cs = _chunk_size(d)
-    return [(r, min(cs, d.size - r)) for r in d.next_offset:cs:(d.size-1)]
+    return [(r, min(cs, d.size - r)) for r in d.next_offset:cs:(d.size - 1)]
 end
 
 """
@@ -486,7 +519,7 @@ end
     content_as_text(downloader; encoding="UTF-8") -> String
     content_as_bytes(downloader) -> Vector{UInt8}
 """
-function content_as_text(d::StorageStreamDownloader; encoding::AbstractString="UTF-8")
+function content_as_text(d::StorageStreamDownloader; encoding::AbstractString = "UTF-8")
     uppercase(replace(String(encoding), "-" => "")) == "UTF8" || throw(ArgumentError("only UTF-8 is supported"))
     data = readall(d)
     return data isa String ? data : String(data)
@@ -520,7 +553,7 @@ struct _ChunkIterator
 end
 Base.IteratorSize(::Type{_ChunkIterator}) = Base.SizeUnknown()
 Base.eltype(::Type{_ChunkIterator}) = Vector{UInt8}
-function Base.iterate(it::_ChunkIterator, _=nothing)
+function Base.iterate(it::_ChunkIterator, _ = nothing)
     d = it.d
     @lock d.lock begin
         _fill!(d) || return nothing
@@ -552,7 +585,7 @@ function Base.read(d::StorageStreamDownloader, ::Type{UInt8})
     end
 end
 
-function Base.readbytes!(d::StorageStreamDownloader, b::AbstractVector{UInt8}, nb::Integer=length(b))
+function Base.readbytes!(d::StorageStreamDownloader, b::AbstractVector{UInt8}, nb::Integer = length(b))
     n = 0
     @lock d.lock begin
         while n < nb && _fill!(d)
@@ -576,7 +609,7 @@ function Base.unsafe_read(d::StorageStreamDownloader, p::Ptr{UInt8}, nb::UInt)
 end
 
 # Scans the buffered chunk instead of reading byte by byte (used by readline/eachline).
-function Base.readuntil(d::StorageStreamDownloader, delim::UInt8; keep::Bool=false)
+function Base.readuntil(d::StorageStreamDownloader, delim::UInt8; keep::Bool = false)
     out = UInt8[]
     @lock d.lock begin
         while _fill!(d)

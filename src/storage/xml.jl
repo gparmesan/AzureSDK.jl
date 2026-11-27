@@ -9,8 +9,8 @@
 "Parsed XML element: tag, attributes and children (elements and text)."
 struct XElement
     tag::String
-    attributes::Vector{Pair{String,String}}
-    children::Vector{Union{XElement,String}}
+    attributes::Vector{Pair{String, String}}
+    children::Vector{Union{XElement, String}}
 end
 
 struct XMLParseError <: Exception
@@ -44,11 +44,11 @@ function _xml_unescape_entities(s::AbstractString)
             elseif ent == "apos"
                 write(io, '\'')
             elseif startswith(ent, "#x") || startswith(ent, "#X")
-                v = tryparse(UInt32, ent[3:end]; base=16)
+                v = tryparse(UInt32, ent[3:end]; base = 16)
                 (v === nothing || !isvalid(Char, v)) && throw(XMLParseError("invalid character reference"))
                 write(io, Char(v))
             elseif startswith(ent, "#")
-                v = tryparse(UInt32, ent[2:end]; base=10)
+                v = tryparse(UInt32, ent[2:end]; base = 10)
                 (v === nothing || !isvalid(Char, v)) && throw(XMLParseError("invalid character reference"))
                 write(io, Char(v))
             else
@@ -77,7 +77,7 @@ end
 
 Parse an XML document (string or bytes) and return its root element.
 """
-function xml_parse(data::Union{AbstractString,AbstractVector{UInt8}})
+function xml_parse(data::Union{AbstractString, AbstractVector{UInt8}})
     s = data isa AbstractString ? String(data) : String(copy(data))
     isvalid(s) || throw(XMLParseError("document is not valid UTF-8"))
     n = ncodeunits(s)
@@ -117,7 +117,7 @@ function xml_parse(data::Union{AbstractString,AbstractVector{UInt8}})
                 end
                 name = _sub(s, i + 1, j)
                 isempty(name) && throw(XMLParseError("empty element name"))
-                attrs = Pair{String,String}[]
+                attrs = Pair{String, String}[]
                 selfclose = false
                 while true
                     while j <= n && _is_xml_space(codeunit(s, j))
@@ -155,7 +155,7 @@ function xml_parse(data::Union{AbstractString,AbstractVector{UInt8}})
                     push!(attrs, aname => _xml_unescape_entities(_sub(s, k + 1, e)))
                     j = e + 1
                 end
-                el = XElement(name, attrs, Union{XElement,String}[])
+                el = XElement(name, attrs, Union{XElement, String}[])
                 if selfclose
                     if isempty(stack)
                         root = el
@@ -196,22 +196,22 @@ end
 xfind(::Nothing, ::AbstractString) = nothing
 
 "All child elements named `tag` (or all child elements when `tag === nothing`)."
-xfindall(e::XElement, tag::Union{Nothing,AbstractString}=nothing) =
+xfindall(e::XElement, tag::Union{Nothing, AbstractString} = nothing) =
     XElement[c for c in e.children if c isa XElement && (tag === nothing || c.tag == tag)]
-xfindall(::Nothing, tag=nothing) = XElement[]
+xfindall(::Nothing, tag = nothing) = XElement[]
 
 "Concatenated text content of an element."
 xtext(e::XElement) = join(c for c in e.children if c isa String)
 xtext(::Nothing) = nothing
 
 "Text of the child element `tag`, or `default` when absent."
-function xchildtext(e, tag::AbstractString, default=nothing)
+function xchildtext(e, tag::AbstractString, default = nothing)
     c = xfind(e, tag)
     return c === nothing ? default : xtext(c)
 end
 
 "Attribute value, or `default`."
-function xattr(e::XElement, name::AbstractString, default=nothing)
+function xattr(e::XElement, name::AbstractString, default = nothing)
     for (k, v) in e.attributes
         k == name && return v
     end
@@ -256,7 +256,7 @@ _xml_content(v::AbstractString) = xml_escape(v)
 _xml_content(v::Bool) = v ? "true" : "false"
 _xml_content(v::Number) = string(v)
 _xml_content(v::Pair) = xml_element(string(v.first), v.second)
-_xml_content(v::Union{AbstractVector,Tuple}) = join(_xml_content(x) for x in v)
+_xml_content(v::Union{AbstractVector, Tuple}) = join(_xml_content(x) for x in v)
 _xml_content(::Nothing) = ""
 
 xml_document(tag::AbstractString, content) = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" * xml_element(tag, content)

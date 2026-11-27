@@ -13,34 +13,34 @@ Annotation maps use `Symbol` keys (AMQP symbols); application properties use
 `String` keys.
 """
 Base.@kwdef mutable struct AMQPMessage
-    header::Union{Nothing,Header} = nothing
-    delivery_annotations::Union{Nothing,Dict{Any,Any}} = nothing
-    message_annotations::Union{Nothing,Dict{Any,Any}} = nothing
-    properties::Union{Nothing,Properties} = nothing
-    application_properties::Union{Nothing,AbstractDict{String,Any}} = nothing
+    header::Union{Nothing, Header} = nothing
+    delivery_annotations::Union{Nothing, Dict{Any, Any}} = nothing
+    message_annotations::Union{Nothing, Dict{Any, Any}} = nothing
+    properties::Union{Nothing, Properties} = nothing
+    application_properties::Union{Nothing, AbstractDict{String, Any}} = nothing
     body_type::Symbol = :data
     body::Any = Vector{UInt8}[]
-    footer::Union{Nothing,Dict{Any,Any}} = nothing
+    footer::Union{Nothing, Dict{Any, Any}} = nothing
 end
 
 function Base.show(io::IO, m::AMQPMessage)
     print(io, "AMQPMessage(body_type=:", m.body_type)
     if m.body_type === :data
-        print(io, ", data_bytes=", sum(length, m.body; init=0))
+        print(io, ", data_bytes=", sum(length, m.body; init = 0))
     end
     m.properties !== nothing && m.properties.message_id !== nothing && print(io, ", message_id=", repr(m.properties.message_id))
-    print(io, ")")
+    return print(io, ")")
 end
 
 "Build a message whose body is a single data section."
-AMQPMessage(data::AbstractVector{UInt8}; kw...) = AMQPMessage(; body_type=:data, body=[Vector{UInt8}(data)], kw...)
+AMQPMessage(data::AbstractVector{UInt8}; kw...) = AMQPMessage(; body_type = :data, body = [Vector{UInt8}(data)], kw...)
 
 "Return the concatenated data sections of a `:data` message body."
 function body_bytes(m::AMQPMessage)
     m.body_type === :data || throw(ArgumentError("message body is not a data body (body_type = :$(m.body_type))"))
     parts = m.body::Vector{Vector{UInt8}}
     length(parts) == 1 && return parts[1]
-    return reduce(vcat, parts; init=UInt8[])
+    return reduce(vcat, parts; init = UInt8[])
 end
 
 # annotation keys are symbols (or ulong); convert strings for convenience
@@ -56,7 +56,7 @@ function encode_annotations!(w::ByteWriter, code::UInt8, d::AbstractDict)
         encode!(w, annotation_key(k))
         encode!(w, v)
     end
-    end_compound!(w, start, 2 * length(d), TC_MAP8, TC_MAP32)
+    return end_compound!(w, start, 2 * length(d), TC_MAP8, TC_MAP32)
 end
 
 function encode_message!(w::ByteWriter, m::AMQPMessage)
@@ -96,9 +96,9 @@ function encode_message(m::AMQPMessage)
 end
 
 function _as_map(v, what)
-    v === nothing && return Dict{Any,Any}()
+    v === nothing && return Dict{Any, Any}()
     v isa AbstractDict || throw(AMQPDecodeError("$what section is not a map"))
-    return v isa Dict{Any,Any} ? v : Dict{Any,Any}(v)
+    return v isa Dict{Any, Any} ? v : Dict{Any, Any}(v)
 end
 
 """
@@ -131,7 +131,7 @@ function decode_message(bytes::AbstractVector{UInt8})
             v = decode(r)
             v === nothing && continue
             v isa AbstractDict || throw(AMQPDecodeError("application-properties section is not a map"))
-            ap = Dict{String,Any}()
+            ap = Dict{String, Any}()
             for (k, val) in v
                 k isa AbstractString || throw(AMQPDecodeError("application-properties keys must be strings"))
                 ap[k] = val
@@ -151,7 +151,7 @@ function decode_message(bytes::AbstractVector{UInt8})
         elseif code == SECTION_FOOTER
             m.footer = _as_map(decode(r), "footer")
         else
-            throw(AMQPDecodeError("unknown message section 0x$(string(code, base=16))"))
+            throw(AMQPDecodeError("unknown message section 0x$(string(code, base = 16))"))
         end
     end
     if has_value

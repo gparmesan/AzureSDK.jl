@@ -11,7 +11,7 @@ with fresh requests.
 """
 struct ItemPaged{T}
     fetch::Function        # continuation token (or nothing) -> (Vector{T}, next token or nothing)
-    continuation_token::Union{Nothing,String}
+    continuation_token::Union{Nothing, String}
 end
 ItemPaged{T}(fetch::Function) where {T} = ItemPaged{T}(fetch, nothing)
 
@@ -19,7 +19,7 @@ Base.IteratorSize(::Type{<:ItemPaged}) = Base.SizeUnknown()
 Base.eltype(::Type{ItemPaged{T}}) where {T} = T
 Base.show(io::IO, ::ItemPaged{T}) where {T} = print(io, "ItemPaged{", T, "}(…)")
 
-function Base.iterate(p::ItemPaged{T}, state=(T[], 1, p.continuation_token, true)) where {T}
+function Base.iterate(p::ItemPaged{T}, state = (T[], 1, p.continuation_token, true)) where {T}
     items, i, token, first = state
     while i > length(items)
         (!first && token === nothing) && return nothing
@@ -41,7 +41,7 @@ resumed later with `by_page(paged; continuation_token=token)`.
 """
 mutable struct PageIterator{T}
     fetch::Function
-    continuation_token::Union{Nothing,String}
+    continuation_token::Union{Nothing, String}
     started::Bool
 end
 Base.IteratorSize(::Type{<:PageIterator}) = Base.SizeUnknown()
@@ -53,10 +53,10 @@ Base.eltype(::Type{PageIterator{T}}) where {T} = Vector{T}
 Iterate `paged` one page (`Vector`) at a time, optionally resuming from a
 continuation token returned by an earlier iteration.
 """
-by_page(p::ItemPaged{T}; continuation_token=p.continuation_token) where {T} =
+by_page(p::ItemPaged{T}; continuation_token = p.continuation_token) where {T} =
     PageIterator{T}(p.fetch, continuation_token === nothing ? nothing : String(continuation_token), false)
 
-function Base.iterate(p::PageIterator{T}, _=nothing) where {T}
+function Base.iterate(p::PageIterator{T}, _ = nothing) where {T}
     (p.started && p.continuation_token === nothing) && return nothing
     items, token = p.fetch(p.continuation_token)
     p.started = true
@@ -73,7 +73,7 @@ How an `etag` passed with a request is used (Python: `azure.core.MatchConditions
 sends `If-None-Match: *`.
 """
 module MatchConditions
-@enum T Unconditionally IfNotModified IfModified IfPresent IfMissing
+    @enum T Unconditionally IfNotModified IfModified IfPresent IfMissing
 end
 
 """

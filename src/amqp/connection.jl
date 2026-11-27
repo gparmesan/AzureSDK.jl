@@ -22,19 +22,19 @@ struct AMQPException <: Exception
     condition::Symbol
     description::String
     info::Any
-    cause::Union{Nothing,Exception}
+    cause::Union{Nothing, Exception}
 end
-AMQPException(scope::Symbol, condition::Symbol, description::AbstractString; info=nothing, cause=nothing) =
+AMQPException(scope::Symbol, condition::Symbol, description::AbstractString; info = nothing, cause = nothing) =
     AMQPException(scope, condition, String(description), info, cause)
 
-function AMQPException(scope::Symbol, err::Union{Nothing,AMQPError}, default_description::AbstractString)
+function AMQPException(scope::Symbol, err::Union{Nothing, AMQPError}, default_description::AbstractString)
     err === nothing && return AMQPException(scope, Symbol("amqp:internal-error"), default_description)
-    return AMQPException(scope, err.condition, something(err.description, default_description); info=err.info)
+    return AMQPException(scope, err.condition, something(err.description, default_description); info = err.info)
 end
 
 function Base.showerror(io::IO, e::AMQPException)
     print(io, "AMQPException(", e.scope, "): ", e.condition, ": ", e.description)
-    if e.cause !== nothing
+    return if e.cause !== nothing
         print(io, "\ncaused by: ")
         showerror(io, e.cause)
     end
@@ -59,7 +59,7 @@ timeout_error(what::AbstractString) = AMQPException(:timeout, COND_TIMEOUT, "tim
 # Waiting helpers
 # ---------------------------------------------------------------------------
 
-@inline deadline_after(timeout::Real) = timeout <= 0 || isinf(timeout) ? UInt64(0) : time_ns() + round(UInt64, timeout * 1e9)
+@inline deadline_after(timeout::Real) = timeout <= 0 || isinf(timeout) ? UInt64(0) : time_ns() + round(UInt64, timeout * 1.0e9)
 
 """
     wait_until(pred, cond, deadline) -> Bool
@@ -76,7 +76,7 @@ function wait_until(pred, cond::Threads.Condition, deadline::UInt64)
                 now = time_ns()
                 now >= deadline && return false
                 if timer === nothing
-                    timer = Timer((deadline - now) / 1e9) do _
+                    timer = Timer((deadline - now) / 1.0e9) do _
                         lock(cond) do
                             notify(cond)
                         end
@@ -104,9 +104,9 @@ abstract type Link end
 mutable struct Session
     conn::Any                       # Connection (declared below)
     channel::UInt16
-    remote_channel::Union{Nothing,UInt16}
+    remote_channel::Union{Nothing, UInt16}
     state::Symbol                   # :begin_sent, :mapped, :end_sent, :ended
-    error::Union{Nothing,Exception}
+    error::Union{Nothing, Exception}
     cond::Threads.Condition
     # flow control
     next_outgoing_id::UInt32
@@ -118,9 +118,9 @@ mutable struct Session
     remote_outgoing_window::UInt32
     handle_max::UInt32
     next_delivery_id::UInt32
-    links::Dict{UInt32,Link}            # by local handle
-    remote_links::Dict{UInt32,Link}     # by remote handle
-    outgoing_unsettled::Dict{UInt32,Any} # delivery id => OutgoingDelivery
+    links::Dict{UInt32, Link}            # by local handle
+    remote_links::Dict{UInt32, Link}     # by remote handle
+    outgoing_unsettled::Dict{UInt32, Any} # delivery id => OutgoingDelivery
 end
 
 mutable struct Connection
@@ -131,19 +131,19 @@ mutable struct Connection
     lock::ReentrantLock
     cond::Threads.Condition
     state::Symbol                   # :opened, :close_sent, :closed
-    error::Union{Nothing,Exception}
+    error::Union{Nothing, Exception}
     local_max_frame_size::UInt32
     max_frame_size::UInt32          # max size of frames we may send
     channel_max::UInt16
     idle_timeout::Float64           # advertised (seconds, 0 = none)
     remote_idle_timeout::Float64
-    remote_open::Union{Nothing,Open}
-    sessions::Dict{UInt16,Session}
-    remote_sessions::Dict{UInt16,Session}
+    remote_open::Union{Nothing, Open}
+    sessions::Dict{UInt16, Session}
+    remote_sessions::Dict{UInt16, Session}
     outq::Channel{Vector{UInt8}}
-    reader::Union{Nothing,Task}
-    writer::Union{Nothing,Task}
-    heartbeat::Union{Nothing,Task}
+    reader::Union{Nothing, Task}
+    writer::Union{Nothing, Task}
+    heartbeat::Union{Nothing, Task}
     last_sent_ns::Threads.Atomic{UInt64}
     last_recv_ns::Threads.Atomic{UInt64}
     max_message_size::Int
@@ -169,13 +169,13 @@ mutable struct SenderLink <: Link
     session::Session
     name::String
     handle::UInt32
-    remote_handle::Union{Nothing,UInt32}
+    remote_handle::Union{Nothing, UInt32}
     state::Symbol                   # :attach_sent, :attached, :detach_sent, :detached
-    error::Union{Nothing,Exception}
+    error::Union{Nothing, Exception}
     cond::Threads.Condition
-    source::Union{Nothing,Source}
-    target::Union{Nothing,Target}
-    remote_attach::Union{Nothing,Attach}
+    source::Union{Nothing, Source}
+    target::Union{Nothing, Target}
+    remote_attach::Union{Nothing, Attach}
     snd_settle_mode::UInt8
     rcv_settle_mode::UInt8
     delivery_count::UInt32
@@ -189,13 +189,13 @@ mutable struct ReceiverLink <: Link
     session::Session
     name::String
     handle::UInt32
-    remote_handle::Union{Nothing,UInt32}
+    remote_handle::Union{Nothing, UInt32}
     state::Symbol
-    error::Union{Nothing,Exception}
+    error::Union{Nothing, Exception}
     cond::Threads.Condition
-    source::Union{Nothing,Source}
-    target::Union{Nothing,Target}
-    remote_attach::Union{Nothing,Attach}
+    source::Union{Nothing, Source}
+    target::Union{Nothing, Target}
+    remote_attach::Union{Nothing, Attach}
     snd_settle_mode::UInt8
     rcv_settle_mode::UInt8
     delivery_count::UInt32
@@ -204,9 +204,9 @@ mutable struct ReceiverLink <: Link
     draining::Bool
     prefetch::Int                   # automatic credit target (0 = manual credit)
     queue::Vector{IncomingDelivery}
-    partial::Union{Nothing,IncomingDelivery}
-    unsettled::Dict{UInt32,IncomingDelivery}
-    on_delivery::Union{Nothing,Function}
+    partial::Union{Nothing, IncomingDelivery}
+    unsettled::Dict{UInt32, IncomingDelivery}
+    on_delivery::Union{Nothing, Function}
     max_message_size::Int
 end
 
@@ -238,22 +238,22 @@ Base.@kwdef struct ConnectionConfig
     hostname::String
     container_id::String = string(uuid4())
     sasl_mechanism::Symbol = :anonymous
-    sasl_username::Union{Nothing,String} = nothing
-    sasl_password::Union{Nothing,String} = nothing
+    sasl_username::Union{Nothing, String} = nothing
+    sasl_password::Union{Nothing, String} = nothing
     max_frame_size::UInt32 = UInt32(1024 * 1024)
     channel_max::UInt16 = UInt16(65535)
     idle_timeout::Float64 = 0.0
     open_timeout::Float64 = 60.0
-    properties::Dict{Symbol,Any} = Dict{Symbol,Any}()
+    properties::Dict{Symbol, Any} = Dict{Symbol, Any}()
     max_message_size::Int = 256 * 1024 * 1024
 end
 
 function Base.show(io::IO, c::ConnectionConfig)
-    print(io, "ConnectionConfig(hostname=", repr(c.hostname), ", sasl=", c.sasl_mechanism, ")")
+    return print(io, "ConnectionConfig(hostname=", repr(c.hostname), ", sasl=", c.sasl_mechanism, ")")
 end
 
 function _write_raw(t::AMQPTransport, bytes::Vector{UInt8})
-    write_all(t, bytes)
+    return write_all(t, bytes)
 end
 
 function _read_frame(reader::TransportReader, max_frame_size::UInt32)
@@ -273,10 +273,10 @@ function _sasl_handshake!(transport::AMQPTransport, reader::TransportReader, cfg
     mechs = frame.body
     mechs isa SaslMechanisms || throw(AMQPException(:protocol, COND_NOT_ALLOWED, "expected sasl-mechanisms frame"))
     mech = cfg.sasl_mechanism === :anonymous ? :ANONYMOUS :
-           cfg.sasl_mechanism === :plain ? :PLAIN :
-           cfg.sasl_mechanism === :external ? :EXTERNAL :
-           cfg.sasl_mechanism === :mssbcbs ? :MSSBCBS :
-           throw(ArgumentError("unsupported SASL mechanism $(cfg.sasl_mechanism)"))
+        cfg.sasl_mechanism === :plain ? :PLAIN :
+        cfg.sasl_mechanism === :external ? :EXTERNAL :
+        cfg.sasl_mechanism === :mssbcbs ? :MSSBCBS :
+        throw(ArgumentError("unsupported SASL mechanism $(cfg.sasl_mechanism)"))
     mech in mechs.sasl_server_mechanisms ||
         throw(AMQPException(:connection, COND_NOT_ALLOWED, "server does not offer SASL mechanism $mech (offered: $(join(mechs.sasl_server_mechanisms, ", ")))"))
     initial = if mech === :PLAIN
@@ -286,8 +286,12 @@ function _sasl_handshake!(transport::AMQPTransport, reader::TransportReader, cfg
     else
         UInt8[]
     end
-    _write_raw(transport, encode_frame(SaslInit(mechanism=mech, initial_response=initial, hostname=cfg.hostname);
-        frame_type=FRAME_TYPE_SASL))
+    _write_raw(
+        transport, encode_frame(
+            SaslInit(mechanism = mech, initial_response = initial, hostname = cfg.hostname);
+            frame_type = FRAME_TYPE_SASL
+        )
+    )
     fill!(initial, 0x00)
     while true
         frame = _read_frame(reader, UInt32(MIN_MAX_FRAME_SIZE * 128))
@@ -295,15 +299,16 @@ function _sasl_handshake!(transport::AMQPTransport, reader::TransportReader, cfg
         if b isa SaslOutcome
             b.code == 0x00 && return nothing
             codes = ("ok", "auth", "sys", "sys-perm", "sys-temp")
-            desc = b.code + 1 <= length(codes) ? codes[b.code+1] : string(b.code)
+            desc = b.code + 1 <= length(codes) ? codes[b.code + 1] : string(b.code)
             throw(AMQPException(:connection, COND_UNAUTHORIZED, "SASL authentication failed (code: $desc)"))
         elseif b isa SaslChallenge
             # none of the supported mechanisms use challenges
-            _write_raw(transport, encode_frame(SaslResponse(response=UInt8[]); frame_type=FRAME_TYPE_SASL))
+            _write_raw(transport, encode_frame(SaslResponse(response = UInt8[]); frame_type = FRAME_TYPE_SASL))
         else
             throw(AMQPException(:protocol, COND_NOT_ALLOWED, "unexpected SASL frame $(typeof(b))"))
         end
     end
+    return
 end
 
 """
@@ -328,12 +333,12 @@ function connect(transport::AMQPTransport, cfg::ConnectionConfig)
     handshake = Threads.@spawn begin
         cfg.sasl_mechanism === :none || _sasl_handshake!(transport, reader, cfg)
         open_frame = Open(
-            container_id=cfg.container_id,
-            hostname=cfg.hostname,
-            max_frame_size=cfg.max_frame_size,
-            channel_max=cfg.channel_max,
-            idle_time_out=cfg.idle_timeout > 0 ? round(UInt32, cfg.idle_timeout * 1000) : nothing,
-            properties=isempty(cfg.properties) ? nothing : cfg.properties,
+            container_id = cfg.container_id,
+            hostname = cfg.hostname,
+            max_frame_size = cfg.max_frame_size,
+            channel_max = cfg.channel_max,
+            idle_time_out = cfg.idle_timeout > 0 ? round(UInt32, cfg.idle_timeout * 1000) : nothing,
+            properties = isempty(cfg.properties) ? nothing : cfg.properties,
         )
         _write_raw(transport, vcat(AMQP_HEADER, encode_frame(open_frame)))
         hdr = read_exact(reader, 8)
@@ -382,10 +387,11 @@ function connect(transport::AMQPTransport, cfg::ConnectionConfig)
         min(cfg.channel_max, something(remote_open.channel_max, typemax(UInt16))),
         cfg.idle_timeout,
         something(remote_open.idle_time_out, UInt32(0)) / 1000,
-        remote_open, Dict{UInt16,Session}(), Dict{UInt16,Session}(),
+        remote_open, Dict{UInt16, Session}(), Dict{UInt16, Session}(),
         Channel{Vector{UInt8}}(typemax(Int)), nothing, nothing, nothing,
         Threads.Atomic{UInt64}(time_ns()), Threads.Atomic{UInt64}(time_ns()),
-        cfg.max_message_size, Any[])
+        cfg.max_message_size, Any[]
+    )
     conn.writer = errormonitor_quiet(Threads.@spawn _writer_loop(conn))
     conn.reader = errormonitor_quiet(Threads.@spawn _reader_loop(conn, reader))
     if conn.remote_idle_timeout > 0 || conn.idle_timeout > 0
@@ -401,7 +407,7 @@ Base.isopen(c::Connection) = @lock c.lock c.state === :opened
 connection_error(c::Connection) = @lock c.lock c.error
 
 function Base.show(io::IO, c::Connection)
-    print(io, "AMQP.Connection(", c.hostname, ", state=", c.state, ")")
+    return print(io, "AMQP.Connection(", c.hostname, ", state=", c.state, ")")
 end
 
 "Register `f(conn)` to be called once when the connection terminates."
@@ -423,12 +429,12 @@ end
     return nothing
 end
 
-_send_performative!(c::Connection, perf; channel::UInt16=UInt16(0), payload=nothing) =
-    _send_frame!(c, encode_frame(perf; channel=channel, payload=payload))
+_send_performative!(c::Connection, perf; channel::UInt16 = UInt16(0), payload = nothing) =
+    _send_frame!(c, encode_frame(perf; channel = channel, payload = payload))
 
 function _writer_loop(c::Connection)
     buf = ByteWriter(256 * 1024)
-    try
+    return try
         while true
             frame = take!(c.outq)
             if !isready(c.outq)
@@ -445,7 +451,7 @@ function _writer_loop(c::Connection)
         end
     catch err
         if !(err isa InvalidStateException)   # queue closed: normal shutdown
-            _connection_failed!(c, AMQPException(:transport, COND_SOCKET, "error writing to transport"; cause=_as_exception(err)))
+            _connection_failed!(c, AMQPException(:transport, COND_SOCKET, "error writing to transport"; cause = _as_exception(err)))
         end
     end
 end
@@ -453,7 +459,7 @@ end
 _as_exception(err) = err isa Exception ? err : ErrorException(string(err))
 
 function _reader_loop(c::Connection, reader::TransportReader)
-    try
+    return try
         while true
             frame = _read_frame(reader, c.local_max_frame_size)
             c.last_recv_ns[] = time_ns()
@@ -470,23 +476,23 @@ function _reader_loop(c::Connection, reader::TransportReader)
         if closing && (ex isa EOFError || ex isa Base.IOError)
             _connection_failed!(c, AMQPException(:connection, COND_CLOSED, "connection closed"))
         elseif ex isa AMQPException && ex.scope === :protocol
-            _close_with_error!(c, AMQPError(condition=ex.condition, description=ex.description))
+            _close_with_error!(c, AMQPError(condition = ex.condition, description = ex.description))
             _connection_failed!(c, ex)
         elseif ex isa AMQPDecodeError
-            _close_with_error!(c, AMQPError(condition=COND_DECODE, description=ex.msg))
+            _close_with_error!(c, AMQPError(condition = COND_DECODE, description = ex.msg))
             _connection_failed!(c, AMQPException(:protocol, COND_DECODE, ex.msg))
         else
-            _connection_failed!(c, AMQPException(:transport, COND_SOCKET, "connection lost"; cause=ex))
+            _connection_failed!(c, AMQPException(:transport, COND_SOCKET, "connection lost"; cause = ex))
         end
     end
 end
 
 function _close_with_error!(c::Connection, err::AMQPError)
-    try
+    return try
         @lock c.lock begin
             if c.state === :opened
                 c.state = :close_sent
-                _send_performative!(c, Close(error=err))
+                _send_performative!(c, Close(error = err))
             end
         end
     catch
@@ -500,19 +506,24 @@ function _heartbeat_loop(c::Connection)
         sleep(check_interval)
         @lock c.lock (c.state === :closed && return)
         now = time_ns()
-        if send_interval < Inf && (now - c.last_sent_ns[]) / 1e9 >= send_interval
+        if send_interval < Inf && (now - c.last_sent_ns[]) / 1.0e9 >= send_interval
             try
                 _send_frame!(c, copy(HEARTBEAT_FRAME))
             catch
                 return
             end
         end
-        if c.idle_timeout > 0 && (now - c.last_recv_ns[]) / 1e9 > 2 * c.idle_timeout
-            _connection_failed!(c, AMQPException(:connection, COND_CONN_FORCED,
-                "no frames received from peer for $(2 * c.idle_timeout) seconds"))
+        if c.idle_timeout > 0 && (now - c.last_recv_ns[]) / 1.0e9 > 2 * c.idle_timeout
+            _connection_failed!(
+                c, AMQPException(
+                    :connection, COND_CONN_FORCED,
+                    "no frames received from peer for $(2 * c.idle_timeout) seconds"
+                )
+            )
             return
         end
     end
+    return
 end
 
 """
@@ -550,7 +561,7 @@ end
 Close the connection gracefully (sends `close` and waits briefly for the
 peer's `close`).
 """
-function Base.close(c::Connection; timeout::Real=10.0)
+function Base.close(c::Connection; timeout::Real = 10.0)
     lock(c.lock)
     try
         if c.state === :opened
@@ -575,7 +586,7 @@ end
 function _dispatch!(c::Connection, frame::Frame)
     perf = frame.body
     lock(c.lock)
-    try
+    return try
         if perf isa Transfer
             s = _remote_session(c, frame.channel)
             s === nothing || _on_transfer!(s, perf, frame.payload)
@@ -609,15 +620,19 @@ end
 
 function _remote_session(c::Connection, channel::UInt16)
     s = get(c.remote_sessions, channel, nothing)
-    s === nothing && throw(AMQPException(:protocol, Symbol("amqp:connection:framing-error"),
-        "frame received on unmapped channel $channel"))
+    s === nothing && throw(
+        AMQPException(
+            :protocol, Symbol("amqp:connection:framing-error"),
+            "frame received on unmapped channel $channel"
+        )
+    )
     return s
 end
 
 function _on_close!(c::Connection, perf::Close)
     err = perf.error !== nothing ? AMQPException(:connection, perf.error, "connection closed by peer") :
-          c.state === :close_sent ? AMQPException(:connection, COND_CLOSED, "connection closed by client") :
-          AMQPException(:connection, COND_CLOSED, "connection closed by peer")
+        c.state === :close_sent ? AMQPException(:connection, COND_CLOSED, "connection closed by client") :
+        AMQPException(:connection, COND_CLOSED, "connection closed by peer")
     if c.state === :opened
         # remote initiated: acknowledge
         try
@@ -632,7 +647,7 @@ function _on_close!(c::Connection, perf::Close)
         _connection_failed!(c, err)
     end
     c.state = :closed_pending
-    notify(c.cond)
+    return notify(c.cond)
 end
 
 # ---------------------------------------------------------------------------
@@ -642,8 +657,10 @@ end
 """
     begin_session(conn; incoming_window=5000, outgoing_window=5000, timeout=60) -> Session
 """
-function begin_session(c::Connection; incoming_window::Integer=5000, outgoing_window::Integer=5000,
-    handle_max::Integer=255, timeout::Real=60.0)
+function begin_session(
+        c::Connection; incoming_window::Integer = 5000, outgoing_window::Integer = 5000,
+        handle_max::Integer = 255, timeout::Real = 60.0
+    )
     lock(c.lock)
     try
         c.state === :opened || throw(something(c.error, AMQPException(:connection, COND_CLOSED, "connection is not open")))
@@ -652,13 +669,19 @@ function begin_session(c::Connection; incoming_window::Integer=5000, outgoing_wi
             ch == c.channel_max && throw(AMQPException(:connection, Symbol("amqp:resource-limit-exceeded"), "no free channels"))
             ch += UInt16(1)
         end
-        s = Session(c, ch, nothing, :begin_sent, nothing, Threads.Condition(c.lock),
+        s = Session(
+            c, ch, nothing, :begin_sent, nothing, Threads.Condition(c.lock),
             UInt32(0), UInt32(incoming_window), UInt32(incoming_window), UInt32(outgoing_window),
             UInt32(0), UInt32(0), UInt32(0), UInt32(handle_max), UInt32(0),
-            Dict{UInt32,Link}(), Dict{UInt32,Link}(), Dict{UInt32,Any}())
+            Dict{UInt32, Link}(), Dict{UInt32, Link}(), Dict{UInt32, Any}()
+        )
         c.sessions[ch] = s
-        _send_performative!(c, Begin(next_outgoing_id=s.next_outgoing_id, incoming_window=s.incoming_window,
-                outgoing_window=s.outgoing_window, handle_max=s.handle_max); channel=ch)
+        _send_performative!(
+            c, Begin(
+                next_outgoing_id = s.next_outgoing_id, incoming_window = s.incoming_window,
+                outgoing_window = s.outgoing_window, handle_max = s.handle_max
+            ); channel = ch
+        )
         ok = wait_until(() -> s.state !== :begin_sent, s.cond, deadline_after(timeout))
         if !ok
             delete!(c.sessions, ch)
@@ -684,7 +707,7 @@ function _on_begin!(c::Connection, channel::UInt16, perf::Begin)
     s.remote_outgoing_window = perf.outgoing_window
     perf.handle_max !== nothing && (s.handle_max = min(s.handle_max, perf.handle_max))
     s.state = :mapped
-    notify(s.cond)
+    return notify(s.cond)
 end
 
 function _on_end!(c::Connection, channel::UInt16, perf::End)
@@ -694,13 +717,13 @@ function _on_end!(c::Connection, channel::UInt16, perf::End)
     delete!(c.sessions, s.channel)
     if s.state !== :end_sent
         try
-            _send_performative!(c, End(); channel=s.channel)
+            _send_performative!(c, End(); channel = s.channel)
         catch
         end
     end
     err = perf.error === nothing ? AMQPException(:session, COND_CLOSED, "session ended") :
-          AMQPException(:session, perf.error, "session ended by peer")
-    _session_failed!(s, err)
+        AMQPException(:session, perf.error, "session ended by peer")
+    return _session_failed!(s, err)
 end
 
 function _session_failed!(s::Session, err::Exception)
@@ -714,18 +737,18 @@ function _session_failed!(s::Session, err::Exception)
         notify(d.cond)
     end
     empty!(s.outgoing_unsettled)
-    notify(s.cond)
+    return notify(s.cond)
 end
 
 "End a session (waits briefly for the peer's end)."
-function end_session(s::Session; timeout::Real=10.0)
+function end_session(s::Session; timeout::Real = 10.0)
     c = s.conn::Connection
     lock(c.lock)
     try
         s.state === :mapped || return nothing
         s.state = :end_sent
         try
-            _send_performative!(c, End(); channel=s.channel)
+            _send_performative!(c, End(); channel = s.channel)
         catch
             return nothing
         end
@@ -736,20 +759,20 @@ function end_session(s::Session; timeout::Real=10.0)
     return nothing
 end
 
-function _session_flow(s::Session; link=nothing, drain::Bool=false, echo::Bool=false)
+function _session_flow(s::Session; link = nothing, drain::Bool = false, echo::Bool = false)
     f = Flow(
-        next_incoming_id=s.next_incoming_id,
-        incoming_window=s.incoming_window,
-        next_outgoing_id=s.next_outgoing_id,
-        outgoing_window=s.outgoing_window,
-        handle=link === nothing ? nothing : link.handle,
-        delivery_count=link === nothing ? nothing : link.delivery_count,
-        link_credit=link === nothing ? nothing : link.link_credit,
-        available=link isa SenderLink ? UInt32(0) : nothing,
-        drain=drain ? true : nothing,
-        echo=echo ? true : nothing,
+        next_incoming_id = s.next_incoming_id,
+        incoming_window = s.incoming_window,
+        next_outgoing_id = s.next_outgoing_id,
+        outgoing_window = s.outgoing_window,
+        handle = link === nothing ? nothing : link.handle,
+        delivery_count = link === nothing ? nothing : link.delivery_count,
+        link_credit = link === nothing ? nothing : link.link_credit,
+        available = link isa SenderLink ? UInt32(0) : nothing,
+        drain = drain ? true : nothing,
+        echo = echo ? true : nothing,
     )
-    _send_performative!(s.conn, f; channel=s.channel)
+    return _send_performative!(s.conn, f; channel = s.channel)
 end
 
 function _on_flow!(s::Session, f::Flow)
@@ -757,7 +780,7 @@ function _on_flow!(s::Session, f::Flow)
     s.remote_incoming_window = (base + f.incoming_window - s.next_outgoing_id) % UInt32
     s.remote_outgoing_window = f.outgoing_window
     notify(s.cond)
-    if f.handle !== nothing
+    return if f.handle !== nothing
         l = get(s.remote_links, f.handle, nothing)
         l === nothing && return
         if l isa SenderLink
@@ -766,9 +789,9 @@ function _on_flow!(s::Session, f::Flow)
             if f.drain === true && !islocked(l.send_lock)
                 l.delivery_count += l.link_credit
                 l.link_credit = UInt32(0)
-                _session_flow(s; link=l)
+                _session_flow(s; link = l)
             elseif f.echo === true
-                _session_flow(s; link=l)
+                _session_flow(s; link = l)
             end
             notify(l.cond)
         else
@@ -786,7 +809,7 @@ function _on_flow!(s::Session, f::Flow)
                 l.delivery_count = f.delivery_count
                 l.link_credit = serial_lt(l.delivery_count, limit) ? (limit - l.delivery_count) % UInt32 : UInt32(0)
             end
-            f.echo === true && _session_flow(s; link=l)
+            f.echo === true && _session_flow(s; link = l)
             notify(l.cond)
         end
     elseif f.echo === true
@@ -808,7 +831,7 @@ function _alloc_handle(s::Session)
 end
 
 function _check_session(s::Session)
-    s.state === :mapped || throw(something(s.error, AMQPException(:session, COND_CLOSED, "session is not active")))
+    return s.state === :mapped || throw(something(s.error, AMQPException(:session, COND_CLOSED, "session is not active")))
 end
 
 function _await_attach!(l::Link, timeout::Real)
@@ -819,7 +842,7 @@ function _await_attach!(l::Link, timeout::Real)
         delete!(s.links, l.handle)
         l.state = :detached
         try
-            _send_performative!(s.conn, Detach(handle=l.handle, closed=true); channel=s.channel)
+            _send_performative!(s.conn, Detach(handle = l.handle, closed = true); channel = s.channel)
         catch
         end
         throw(timeout_error("link attach ($(l.name))"))
@@ -841,30 +864,38 @@ end
 
 Attach a sending link. `target` is an address string or a [`Target`](@ref).
 """
-function attach_sender(s::Session, name::AbstractString, target;
-    source=nothing,
-    snd_settle_mode::UInt8=SND_UNSETTLED,
-    rcv_settle_mode::UInt8=RCV_FIRST,
-    properties::Union{Nothing,Dict{Symbol,Any}}=nothing,
-    desired_capabilities::Union{Nothing,Vector{Symbol}}=nothing,
-    max_message_size::Union{Nothing,Integer}=nothing,
-    timeout::Real=60.0)
+function attach_sender(
+        s::Session, name::AbstractString, target;
+        source = nothing,
+        snd_settle_mode::UInt8 = SND_UNSETTLED,
+        rcv_settle_mode::UInt8 = RCV_FIRST,
+        properties::Union{Nothing, Dict{Symbol, Any}} = nothing,
+        desired_capabilities::Union{Nothing, Vector{Symbol}} = nothing,
+        max_message_size::Union{Nothing, Integer} = nothing,
+        timeout::Real = 60.0
+    )
     c = s.conn::Connection
-    tgt = target isa Target ? target : Target(address=String(target))
-    src = source === nothing ? Source(address=String(name)) : source isa Source ? source : Source(address=String(source))
+    tgt = target isa Target ? target : Target(address = String(target))
+    src = source === nothing ? Source(address = String(name)) : source isa Source ? source : Source(address = String(source))
     lock(c.lock)
     try
         _check_session(s)
         h = _alloc_handle(s)
-        l = SenderLink(s, String(name), h, nothing, :attach_sent, nothing, Threads.Condition(c.lock),
+        l = SenderLink(
+            s, String(name), h, nothing, :attach_sent, nothing, Threads.Condition(c.lock),
             src, tgt, nothing, snd_settle_mode, rcv_settle_mode, UInt32(0), UInt32(0),
-            ReentrantLock(), UInt64(0), UInt64(0))
+            ReentrantLock(), UInt64(0), UInt64(0)
+        )
         s.links[h] = l
-        _send_performative!(c, Attach(name=l.name, handle=h, role=ROLE_SENDER,
-                snd_settle_mode=snd_settle_mode, rcv_settle_mode=rcv_settle_mode,
-                source=src, target=tgt, initial_delivery_count=UInt32(0),
-                max_message_size=max_message_size === nothing ? nothing : UInt64(max_message_size),
-                desired_capabilities=desired_capabilities, properties=properties); channel=s.channel)
+        _send_performative!(
+            c, Attach(
+                name = l.name, handle = h, role = ROLE_SENDER,
+                snd_settle_mode = snd_settle_mode, rcv_settle_mode = rcv_settle_mode,
+                source = src, target = tgt, initial_delivery_count = UInt32(0),
+                max_message_size = max_message_size === nothing ? nothing : UInt64(max_message_size),
+                desired_capabilities = desired_capabilities, properties = properties
+            ); channel = s.channel
+        )
         return _await_attach!(l, timeout)
     finally
         unlock(c.lock)
@@ -882,33 +913,41 @@ otherwise call [`flow!`](@ref) to grant credit.
 with the connection lock held for every completed delivery instead of queuing
 it; it must not block.
 """
-function attach_receiver(s::Session, name::AbstractString, source;
-    target=nothing,
-    snd_settle_mode::UInt8=SND_UNSETTLED,
-    rcv_settle_mode::UInt8=RCV_FIRST,
-    properties::Union{Nothing,Dict{Symbol,Any}}=nothing,
-    desired_capabilities::Union{Nothing,Vector{Symbol}}=nothing,
-    prefetch::Integer=0,
-    on_delivery::Union{Nothing,Function}=nothing,
-    max_message_size::Union{Nothing,Integer}=nothing,
-    timeout::Real=60.0)
+function attach_receiver(
+        s::Session, name::AbstractString, source;
+        target = nothing,
+        snd_settle_mode::UInt8 = SND_UNSETTLED,
+        rcv_settle_mode::UInt8 = RCV_FIRST,
+        properties::Union{Nothing, Dict{Symbol, Any}} = nothing,
+        desired_capabilities::Union{Nothing, Vector{Symbol}} = nothing,
+        prefetch::Integer = 0,
+        on_delivery::Union{Nothing, Function} = nothing,
+        max_message_size::Union{Nothing, Integer} = nothing,
+        timeout::Real = 60.0
+    )
     c = s.conn::Connection
-    src = source isa Source ? source : Source(address=String(source))
-    tgt = target === nothing ? Target(address=String(name)) : target isa Target ? target : Target(address=String(target))
+    src = source isa Source ? source : Source(address = String(source))
+    tgt = target === nothing ? Target(address = String(name)) : target isa Target ? target : Target(address = String(target))
     lock(c.lock)
     try
         _check_session(s)
         h = _alloc_handle(s)
-        l = ReceiverLink(s, String(name), h, nothing, :attach_sent, nothing, Threads.Condition(c.lock),
+        l = ReceiverLink(
+            s, String(name), h, nothing, :attach_sent, nothing, Threads.Condition(c.lock),
             src, tgt, nothing, snd_settle_mode, rcv_settle_mode, UInt32(0), UInt32(0), UInt32(0),
-            false, Int(prefetch), IncomingDelivery[], nothing, Dict{UInt32,IncomingDelivery}(), on_delivery,
-            max_message_size === nothing ? c.max_message_size : Int(max_message_size))
+            false, Int(prefetch), IncomingDelivery[], nothing, Dict{UInt32, IncomingDelivery}(), on_delivery,
+            max_message_size === nothing ? c.max_message_size : Int(max_message_size)
+        )
         s.links[h] = l
-        _send_performative!(c, Attach(name=l.name, handle=h, role=ROLE_RECEIVER,
-                snd_settle_mode=snd_settle_mode, rcv_settle_mode=rcv_settle_mode,
-                source=src, target=tgt,
-                max_message_size=max_message_size === nothing ? nothing : UInt64(max_message_size),
-                desired_capabilities=desired_capabilities, properties=properties); channel=s.channel)
+        _send_performative!(
+            c, Attach(
+                name = l.name, handle = h, role = ROLE_RECEIVER,
+                snd_settle_mode = snd_settle_mode, rcv_settle_mode = rcv_settle_mode,
+                source = src, target = tgt,
+                max_message_size = max_message_size === nothing ? nothing : UInt64(max_message_size),
+                desired_capabilities = desired_capabilities, properties = properties
+            ); channel = s.channel
+        )
         _await_attach!(l, timeout)
         prefetch > 0 && _issue_credit!(l, UInt32(prefetch))
         return l
@@ -928,9 +967,13 @@ function _on_attach!(s::Session, a::Attach)
     end
     if l === nothing
         # peer-initiated link: refuse
-        _send_performative!(s.conn, Attach(name=a.name, handle=_alloc_handle(s), role=!a.role); channel=s.channel)
-        _send_performative!(s.conn, Detach(handle=a.handle, closed=true,
-                error=AMQPError(condition=COND_NOT_ALLOWED, description="client does not accept links")); channel=s.channel)
+        _send_performative!(s.conn, Attach(name = a.name, handle = _alloc_handle(s), role = !a.role); channel = s.channel)
+        _send_performative!(
+            s.conn, Detach(
+                handle = a.handle, closed = true,
+                error = AMQPError(condition = COND_NOT_ALLOWED, description = "client does not accept links")
+            ); channel = s.channel
+        )
         return
     end
     haskey(s.remote_links, a.handle) && throw(AMQPException(:protocol, Symbol("amqp:session:handle-in-use"), "handle $(a.handle) in use"))
@@ -947,7 +990,7 @@ function _on_attach!(s::Session, a::Attach)
         a.rcv_settle_mode !== nothing && (l.rcv_settle_mode = a.rcv_settle_mode)
     end
     l.state = :attached
-    notify(l.cond)
+    return notify(l.cond)
 end
 
 function _on_detach!(s::Session, d::Detach)
@@ -957,13 +1000,13 @@ function _on_detach!(s::Session, d::Detach)
     delete!(s.links, l.handle)
     if l.state !== :detach_sent
         try
-            _send_performative!(s.conn, Detach(handle=l.handle, closed=true); channel=s.channel)
+            _send_performative!(s.conn, Detach(handle = l.handle, closed = true); channel = s.channel)
         catch
         end
     end
     err = d.error === nothing ? AMQPException(:link, COND_DETACH_FORCED, "link detached by peer") :
-          AMQPException(:link, d.error, "link detached by peer")
-    _link_failed!(l, err)
+        AMQPException(:link, d.error, "link detached by peer")
+    return _link_failed!(l, err)
 end
 
 function _link_failed!(l::Link, err::Exception)
@@ -986,7 +1029,7 @@ function _link_failed!(l::Link, err::Exception)
         end
     end
     notify(l.cond)
-    notify(l.session.cond)
+    return notify(l.session.cond)
 end
 
 """
@@ -994,7 +1037,7 @@ end
 
 Detach (close) a link and wait briefly for the peer's detach.
 """
-function detach(l::Link; closed::Bool=true, timeout::Real=10.0, error::Union{Nothing,AMQPError}=nothing)
+function detach(l::Link; closed::Bool = true, timeout::Real = 10.0, error::Union{Nothing, AMQPError} = nothing)
     s = l.session
     c = s.conn::Connection
     lock(c.lock)
@@ -1002,7 +1045,7 @@ function detach(l::Link; closed::Bool=true, timeout::Real=10.0, error::Union{Not
         l.state === :attached || return nothing
         l.state = :detach_sent
         try
-            _send_performative!(c, Detach(handle=l.handle, closed=closed, error=error); channel=s.channel)
+            _send_performative!(c, Detach(handle = l.handle, closed = closed, error = error); channel = s.channel)
         catch
             l.state = :detached
             return nothing
@@ -1037,13 +1080,17 @@ mutable struct PendingSend
     cond::Threads.Condition
     state::Any
     settled::Bool
-    error::Union{Nothing,Exception}
+    error::Union{Nothing, Exception}
 end
 
 function _link_usable(l::Link)
     l.state === :attached && l.session.state === :mapped && return nothing
-    throw(something(l.error, l.session.error, (l.session.conn::Connection).error,
-        AMQPException(:link, COND_DETACH_FORCED, "link $(l.name) is not attached")))
+    throw(
+        something(
+            l.error, l.session.error, (l.session.conn::Connection).error,
+            AMQPException(:link, COND_DETACH_FORCED, "link $(l.name) is not attached")
+        )
+    )
 end
 
 """
@@ -1054,14 +1101,20 @@ across frames. Unless `settled` is true, waits for the receiver's outcome and
 returns it (`Accepted`, `Rejected`, `Released`, `Modified`, or `nothing` if the
 peer settled without an outcome).
 """
-function send_transfer(l::SenderLink, payload::AbstractVector{UInt8};
-    message_format::UInt32=UInt32(0), settled::Bool=false, timeout::Real=60.0)
+function send_transfer(
+        l::SenderLink, payload::AbstractVector{UInt8};
+        message_format::UInt32 = UInt32(0), settled::Bool = false, timeout::Real = 60.0
+    )
     s = l.session
     c = s.conn::Connection
     deadline = deadline_after(timeout)
     if l.max_message_size > 0 && length(payload) > l.max_message_size
-        throw(AMQPException(:link, COND_MSG_SIZE,
-            "message of $(length(payload)) bytes exceeds the link's max message size of $(l.max_message_size) bytes"))
+        throw(
+            AMQPException(
+                :link, COND_MSG_SIZE,
+                "message of $(length(payload)) bytes exceeds the link's max message size of $(l.max_message_size) bytes"
+            )
+        )
     end
     pending = nothing
     lock(l.send_lock)
@@ -1081,15 +1134,19 @@ function send_transfer(l::SenderLink, payload::AbstractVector{UInt8};
                 pending = PendingSend(id, l, Threads.Condition(c.lock), nothing, false, nothing)
                 s.outgoing_unsettled[id] = pending
             end
-            first_perf = Transfer(handle=l.handle, delivery_id=id, delivery_tag=Vector{UInt8}(tag),
-                message_format=message_format, settled=settled, more=true)
+            first_perf = Transfer(
+                handle = l.handle, delivery_id = id, delivery_tag = Vector{UInt8}(tag),
+                message_format = message_format, settled = settled, more = true
+            )
             overhead = length(encode(first_perf)) + FRAME_HEADER_SIZE
             n = length(payload)
             if overhead + n <= c.max_frame_size
                 # common case: single frame
                 _await_session_window!(s, l, deadline)
-                perf = Transfer(handle=l.handle, delivery_id=id, delivery_tag=Vector{UInt8}(tag),
-                    message_format=message_format, settled=settled)
+                perf = Transfer(
+                    handle = l.handle, delivery_id = id, delivery_tag = Vector{UInt8}(tag),
+                    message_format = message_format, settled = settled
+                )
                 _emit_transfer!(s, perf, payload)
             else
                 chunk = Int(c.max_frame_size) - overhead
@@ -1099,9 +1156,11 @@ function send_transfer(l::SenderLink, payload::AbstractVector{UInt8};
                 while pos <= last_index
                     stop = min(pos + chunk - 1, last_index)
                     more = stop < last_index
-                    perf = first ? Transfer(handle=l.handle, delivery_id=id, delivery_tag=Vector{UInt8}(tag),
-                                            message_format=message_format, settled=settled, more=more) :
-                                   Transfer(handle=l.handle, more=more)
+                    perf = first ? Transfer(
+                            handle = l.handle, delivery_id = id, delivery_tag = Vector{UInt8}(tag),
+                            message_format = message_format, settled = settled, more = more
+                        ) :
+                        Transfer(handle = l.handle, more = more)
                     _await_session_window!(s, l, deadline)
                     _emit_transfer!(s, perf, view(payload, pos:stop))
                     pos = stop + 1
@@ -1135,22 +1194,22 @@ end
 function _await_session_window!(s::Session, l::Link, deadline::UInt64)
     ok = wait_until(() -> s.state !== :mapped || l.state !== :attached || s.remote_incoming_window > 0, s.cond, deadline)
     _link_usable(l)
-    ok || throw(timeout_error("session window"))
+    return ok || throw(timeout_error("session window"))
 end
 
 function _emit_transfer!(s::Session, perf::Transfer, payload)
     s.next_outgoing_id += UInt32(1)
     s.remote_incoming_window -= UInt32(1)
-    _send_performative!(s.conn, perf; channel=s.channel, payload=payload)
+    return _send_performative!(s.conn, perf; channel = s.channel, payload = payload)
 end
 
 function _on_disposition!(s::Session, d::Disposition)
     last = something(d.last, d.first)
-    if d.role == ROLE_RECEIVER
+    return if d.role == ROLE_RECEIVER
         # outcome for deliveries we sent
         span = (last - d.first) % UInt32
         ids = span < length(s.outgoing_unsettled) ? (d.first + i for i in UInt32(0):span) :
-              [id for id in keys(s.outgoing_unsettled) if serial_le(d.first, id) && serial_le(id, last)]
+            [id for id in keys(s.outgoing_unsettled) if serial_le(d.first, id) && serial_le(id, last)]
         for id in ids
             p = get(s.outgoing_unsettled, id % UInt32, nothing)
             p === nothing && continue
@@ -1158,8 +1217,10 @@ function _on_disposition!(s::Session, d::Disposition)
             if d.settled === true || d.state isa Outcome
                 if d.settled !== true
                     # peer awaits our settlement (rcv-settle-mode second)
-                    _send_performative!(s.conn, Disposition(role=ROLE_SENDER, first=p.id, settled=true, state=d.state);
-                        channel=s.channel)
+                    _send_performative!(
+                        s.conn, Disposition(role = ROLE_SENDER, first = p.id, settled = true, state = d.state);
+                        channel = s.channel
+                    )
                 end
                 p.settled = true
                 delete!(s.outgoing_unsettled, p.id)
@@ -1173,7 +1234,7 @@ function _on_disposition!(s::Session, d::Disposition)
             isempty(l.unsettled) && continue
             span = (last - d.first) % UInt32
             ids = span < length(l.unsettled) ? (d.first + i for i in UInt32(0):span) :
-                  [id for id in keys(l.unsettled) if serial_le(d.first, id) && serial_le(id, last)]
+                [id for id in keys(l.unsettled) if serial_le(d.first, id) && serial_le(id, last)]
             for id in ids
                 del = get(l.unsettled, id % UInt32, nothing)
                 del === nothing && continue
@@ -1206,16 +1267,22 @@ function _on_transfer!(s::Session, t::Transfer, payload)
         _session_flow(s)
     end
     l = get(s.remote_links, t.handle, nothing)
-    l isa ReceiverLink || throw(AMQPException(:protocol, Symbol("amqp:session:unattached-handle"),
-        "transfer on unknown handle $(t.handle)"))
+    l isa ReceiverLink || throw(
+        AMQPException(
+            :protocol, Symbol("amqp:session:unattached-handle"),
+            "transfer on unknown handle $(t.handle)"
+        )
+    )
     d = l.partial
     if d === nothing
         t.delivery_id === nothing && throw(AMQPException(:protocol, COND_NOT_ALLOWED, "first transfer without delivery-id"))
         l.link_credit == 0 && !l.draining && @debug "peer sent a transfer without link credit" link = l.name
-        d = IncomingDelivery(l, t.delivery_id, something(t.delivery_tag, UInt8[]),
+        d = IncomingDelivery(
+            l, t.delivery_id, something(t.delivery_tag, UInt8[]),
             something(t.message_format, UInt32(0)),
             something(t.settled, false) || l.snd_settle_mode == SND_SETTLED,
-            t.state, false, UInt8[], false)
+            t.state, false, UInt8[], false
+        )
         l.partial = d
     end
     if payload !== nothing
@@ -1244,13 +1311,13 @@ function _on_transfer!(s::Session, t::Transfer, payload)
     else
         push!(l.queue, d)
     end
-    notify(l.cond)
+    return notify(l.cond)
 end
 
-function _issue_credit!(l::ReceiverLink, credit::UInt32; drain::Bool=false)
+function _issue_credit!(l::ReceiverLink, credit::UInt32; drain::Bool = false)
     l.link_credit = credit
     drain && (l.draining = true)
-    _session_flow(l.session; link=l, drain=drain)
+    return _session_flow(l.session; link = l, drain = drain)
 end
 
 """
@@ -1258,11 +1325,11 @@ end
 
 Set the link credit (the number of further deliveries the sender may send).
 """
-function flow!(l::ReceiverLink, credit::Integer; drain::Bool=false)
+function flow!(l::ReceiverLink, credit::Integer; drain::Bool = false)
     c = l.session.conn::Connection
     @lock c.lock begin
         _link_usable(l)
-        _issue_credit!(l, UInt32(credit); drain=drain)
+        _issue_credit!(l, UInt32(credit); drain = drain)
     end
     return nothing
 end
@@ -1275,7 +1342,7 @@ has. Deliveries sent meanwhile are queued. Returns `false` on timeout; the
 drain then stays pending (see [`drain_pending!`](@ref)) and a later call waits
 for it without asking again.
 """
-function drain!(l::ReceiverLink; timeout::Real=10.0)
+function drain!(l::ReceiverLink; timeout::Real = 10.0)
     c = l.session.conn::Connection
     lock(c.lock)
     try
@@ -1284,7 +1351,7 @@ function drain!(l::ReceiverLink; timeout::Real=10.0)
             l.draining = false          # nothing more can be delivered
             return true
         end
-        l.draining || _issue_credit!(l, l.link_credit; drain=true)   # else wait for the pending drain
+        l.draining || _issue_credit!(l, l.link_credit; drain = true)   # else wait for the pending drain
         return wait_until(() -> !l.draining || l.state !== :attached, l.cond, deadline_after(timeout))
     finally
         unlock(c.lock)
@@ -1301,7 +1368,7 @@ sender's reply instead. With no credit left the sender cannot deliver
 anything more, so the drain is treated as complete.
 """
 function drain_pending!(l::ReceiverLink)
-    @lock l.session.conn.lock begin
+    return @lock l.session.conn.lock begin
         l.draining && l.link_credit == 0 && (l.draining = false)
         l.draining
     end
@@ -1312,7 +1379,7 @@ function _topup_credit!(l::ReceiverLink)
     l.state === :attached || return
     desired = l.prefetch - length(l.queue)
     desired <= 0 && return
-    if desired > l.link_credit && (l.link_credit == 0 || desired - l.link_credit >= max(1, l.prefetch ÷ 2))
+    return if desired > l.link_credit && (l.link_credit == 0 || desired - l.link_credit >= max(1, l.prefetch ÷ 2))
         _issue_credit!(l, UInt32(desired))
     end
 end
@@ -1323,12 +1390,14 @@ end
 Take the next delivery from the link's queue, waiting up to `timeout`
 seconds (`nothing` on timeout). Throws if the link fails while waiting.
 """
-function receive_delivery(l::ReceiverLink; timeout::Real=60.0)
+function receive_delivery(l::ReceiverLink; timeout::Real = 60.0)
     c = l.session.conn::Connection
     lock(c.lock)
     try
-        wait_until(() -> !isempty(l.queue) || l.state !== :attached || l.session.state !== :mapped,
-            l.cond, deadline_after(timeout))
+        wait_until(
+            () -> !isempty(l.queue) || l.state !== :attached || l.session.state !== :mapped,
+            l.cond, deadline_after(timeout)
+        )
         if !isempty(l.queue)
             d = popfirst!(l.queue)
             _topup_credit!(l)
@@ -1343,9 +1412,9 @@ function receive_delivery(l::ReceiverLink; timeout::Real=60.0)
 end
 
 "Take all currently queued deliveries without waiting."
-function take_queued!(l::ReceiverLink, max::Integer=typemax(Int))
+function take_queued!(l::ReceiverLink, max::Integer = typemax(Int))
     c = l.session.conn::Connection
-    @lock c.lock begin
+    return @lock c.lock begin
         n = min(max, length(l.queue))
         ds = l.queue[1:n]
         deleteat!(l.queue, 1:n)
@@ -1366,7 +1435,7 @@ unsettled and the call waits for the peer to confirm, returning the peer's
 state; peer-reported failures (e.g. an expired lock) surface as the returned
 `Rejected` state.
 """
-function settle!(d::IncomingDelivery, outcome; wait::Bool=false, timeout::Real=60.0)
+function settle!(d::IncomingDelivery, outcome; wait::Bool = false, timeout::Real = 60.0)
     l = d.link::ReceiverLink
     s = l.session
     c = s.conn::Connection
@@ -1377,21 +1446,31 @@ function settle!(d::IncomingDelivery, outcome; wait::Bool=false, timeout::Real=6
         if !wait
             d.settled = true
             delete!(l.unsettled, d.delivery_id)
-            _send_performative!(c, Disposition(role=ROLE_RECEIVER, first=d.delivery_id, settled=true, state=outcome);
-                channel=s.channel)
+            _send_performative!(
+                c, Disposition(role = ROLE_RECEIVER, first = d.delivery_id, settled = true, state = outcome);
+                channel = s.channel
+            )
             return outcome
         end
         d.waiting = true
-        _send_performative!(c, Disposition(role=ROLE_RECEIVER, first=d.delivery_id, settled=false, state=outcome);
-            channel=s.channel)
-        ok = wait_until(() -> d.remote_settled || d.remote_state !== nothing || l.state !== :attached, l.cond,
-            deadline_after(timeout))
+        _send_performative!(
+            c, Disposition(role = ROLE_RECEIVER, first = d.delivery_id, settled = false, state = outcome);
+            channel = s.channel
+        )
+        ok = wait_until(
+            () -> d.remote_settled || d.remote_state !== nothing || l.state !== :attached, l.cond,
+            deadline_after(timeout)
+        )
         d.waiting = false
         if d.remote_settled || d.remote_state !== nothing
             if !d.remote_settled
                 # peer sent its outcome without settling: settle now
-                _send_performative!(c, Disposition(role=ROLE_RECEIVER, first=d.delivery_id, settled=true,
-                        state=something(d.remote_state, outcome)); channel=s.channel)
+                _send_performative!(
+                    c, Disposition(
+                        role = ROLE_RECEIVER, first = d.delivery_id, settled = true,
+                        state = something(d.remote_state, outcome)
+                    ); channel = s.channel
+                )
                 delete!(l.unsettled, d.delivery_id)
             end
             d.settled = true

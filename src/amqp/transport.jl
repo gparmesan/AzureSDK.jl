@@ -25,12 +25,16 @@ mutable struct SocketTransport{C} <: AMQPTransport
 end
 
 function read_some!(t::SocketTransport, buf::Vector{UInt8})
-    n = readbytes!(t.conn, buf, length(buf); all=false)
+    n = readbytes!(t.conn, buf, length(buf); all = false)
     n == 0 && throw(EOFError())
     return n
 end
 write_all(t::SocketTransport, bytes::Vector{UInt8}) = (write(t.conn, bytes); nothing)
-Base.close(t::SocketTransport) = (try close(t.conn) catch end; nothing)
+Base.close(t::SocketTransport) = (
+    try
+        close(t.conn)
+    catch end; nothing
+)
 Base.isopen(t::SocketTransport) = isopen(t.conn)
 Base.show(io::IO, t::SocketTransport) = print(io, "SocketTransport(", t.description, ")")
 
@@ -60,7 +64,11 @@ function read_some!(t::WebSocketTransport, buf::Vector{UInt8})
     return n
 end
 write_all(t::WebSocketTransport, bytes::Vector{UInt8}) = (HTTP.WebSockets.send(t.ws, bytes); nothing)
-Base.close(t::WebSocketTransport) = (try close(t.ws) catch end; nothing)
+Base.close(t::WebSocketTransport) = (
+    try
+        close(t.ws)
+    catch end; nothing
+)
 Base.isopen(t::WebSocketTransport) = !HTTP.WebSockets.isclosed(t.ws)
 Base.show(io::IO, t::WebSocketTransport) = print(io, "WebSocketTransport(", t.description, ")")
 
@@ -73,10 +81,10 @@ mutable struct TransportReader
     start::Int
     stop::Int
 end
-TransportReader(t::AMQPTransport; bufsize::Int=64 * 1024) = TransportReader(t, Vector{UInt8}(undef, bufsize), 1, 0)
+TransportReader(t::AMQPTransport; bufsize::Int = 64 * 1024) = TransportReader(t, Vector{UInt8}(undef, bufsize), 1, 0)
 
 "Read exactly `n` bytes into `dest[1:n]`."
-function read_exact!(r::TransportReader, dest::Vector{UInt8}, n::Int=length(dest))
+function read_exact!(r::TransportReader, dest::Vector{UInt8}, n::Int = length(dest))
     filled = 0
     while filled < n
         avail = r.stop - r.start + 1
@@ -123,12 +131,12 @@ How to reach an AMQP endpoint.
 Base.@kwdef struct TransportConfig
     scheme::Symbol = :amqps
     host::String
-    port::Union{Nothing,Int} = nothing
+    port::Union{Nothing, Int} = nothing
     verify_tls::Bool = true
-    ca_file::Union{Nothing,String} = nothing
+    ca_file::Union{Nothing, String} = nothing
     connect_timeout::Float64 = 60.0
     http_proxy::Any = nothing
-    custom_endpoint_address::Union{Nothing,String} = nothing
+    custom_endpoint_address::Union{Nothing, String} = nothing
     websocket_path::String = "/\$servicebus/websocket"
     http_client::Any = nothing       # HTTP.Client for the WebSocket handshake (custom CA / proxy)
 end
@@ -139,8 +147,10 @@ function _endpoint(cfg::TransportConfig)
     host = cfg.host
     port = something(cfg.port, default_port(cfg.scheme))
     if cfg.custom_endpoint_address !== nothing
-        u = URIs.URI(occursin("://", cfg.custom_endpoint_address) ? cfg.custom_endpoint_address :
-                     "sb://" * cfg.custom_endpoint_address)
+        u = URIs.URI(
+            occursin("://", cfg.custom_endpoint_address) ? cfg.custom_endpoint_address :
+                "sb://" * cfg.custom_endpoint_address
+        )
         host = u.host
         isempty(u.port) || (port = parse(Int, u.port))
     end
@@ -170,24 +180,26 @@ end
 function open_transport(cfg::TransportConfig)
     cfg.scheme === :loopback && return open_loopback()
     host, port = _endpoint(cfg)
-    timeout_ns = round(Int64, cfg.connect_timeout * 1e9)
+    timeout_ns = round(Int64, cfg.connect_timeout * 1.0e9)
     if cfg.scheme === :amqp
-        conn = Reseau.TCP.connect(_hostport(host, port); timeout_ns=timeout_ns)
+        conn = Reseau.TCP.connect(_hostport(host, port); timeout_ns = timeout_ns)
         _tune_tcp!(conn)
         return SocketTransport(conn, "amqp://$(_hostport(host, port))")
     elseif cfg.scheme === :amqps
-        conn = Reseau.TLS.connect(_hostport(host, port);
-            timeout_ns=timeout_ns,
-            server_name=cfg.host,
-            verify_peer=cfg.verify_tls,
-            ca_file=cfg.ca_file,
-            handshake_timeout_ns=timeout_ns)
+        conn = Reseau.TLS.connect(
+            _hostport(host, port);
+            timeout_ns = timeout_ns,
+            server_name = cfg.host,
+            verify_peer = cfg.verify_tls,
+            ca_file = cfg.ca_file,
+            handshake_timeout_ns = timeout_ns
+        )
         _tune_tcp!(Reseau.TLS.net_conn(conn))
         return SocketTransport(conn, "amqps://$(_hostport(host, port))")
     elseif cfg.scheme === :wss || cfg.scheme === :ws
         proto = cfg.scheme === :wss ? "wss" : "ws"
         url = string(proto, "://", _hostport(host, port), cfg.websocket_path)
-        kwargs = Dict{Symbol,Any}(
+        kwargs = Dict{Symbol, Any}(
             :subprotocols => ["AMQPWSB10"],
             :connect_timeout => cfg.connect_timeout,
             :require_ssl_verification => cfg.verify_tls,
@@ -215,7 +227,7 @@ end
 function _tune_tcp!(conn)
     try
         Reseau.TCP.set_nodelay!(conn, true)
-        Reseau.TCP.set_keepalive!(conn, true; idle_secs=30, interval_secs=10, count=6)
+        Reseau.TCP.set_keepalive!(conn, true; idle_secs = 30, interval_secs = 10, count = 6)
     catch err
         @debug "could not tune TCP socket options" exception = err
     end

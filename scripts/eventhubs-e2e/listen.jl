@@ -25,7 +25,8 @@ const SPEC = Dict(
     "-x" => (:exit_after, :value), "--exit-after" => (:exit_after, :value),
     "-t" => (:idle_timeout, :value), "--idle-timeout" => (:idle_timeout, :value),
     "--auth" => (:auth, :value), "--transport" => (:transport, :value),
-    "-h" => (:help, :flag), "--help" => (:help, :flag))
+    "-h" => (:help, :flag), "--help" => (:help, :flag)
+)
 
 "Milliseconds from the event's \"sent_at\" property (set by send.jl) until now, or `nothing`."
 function latency_ms(event)
@@ -36,28 +37,34 @@ function latency_ms(event)
 end
 
 function show_event(ctx, event)
-    println("── partition ", ctx.partition_id, "  seq ", event.sequence_number, "  offset ", event.offset,
-        "  enqueued ", event.enqueued_time, " UTC")
+    println(
+        "── partition ", ctx.partition_id, "  seq ", event.sequence_number, "  offset ", event.offset,
+        "  enqueued ", event.enqueued_time, " UTC"
+    )
     event.partition_key === nothing || println("   partition key: ", event.partition_key)
     event.content_type === nothing || println("   content type:  ", event.content_type)
     props = filter(p -> p.first != "sent_at", event.properties)
-    isempty(props) || println("   properties:    ",
-        join(("$k=$(repr(props[k]))" for k in sort!(collect(keys(props)))), ", "))
+    isempty(props) || println(
+        "   properties:    ",
+        join(("$k=$(repr(props[k]))" for k in sort!(collect(keys(props)))), ", ")
+    )
     ms = latency_ms(event)
     ms === nothing || println("   latency:       ", ms, " ms (sent_at → received)")
-    println("   body:          ", body_as_str(event))
+    return println("   body:          ", body_as_str(event))
 end
 
 function main(args)
     opts, rest = parse_args(args, SPEC)
-    (get(opts, :help, false) || !isempty(rest)) && usage(@__FILE__; status=isempty(rest) ? 0 : 1)
+    (get(opts, :help, false) || !isempty(rest)) && usage(@__FILE__; status = isempty(rest) ? 0 : 1)
     exit_after = haskey(opts, :exit_after) ? parse(Int, opts[:exit_after]) : nothing
     idle = haskey(opts, :idle_timeout) ? parse(Float64, opts[:idle_timeout]) : nothing
     transport = parse_transport(get(opts, :transport, "amqp"))
     transport == TransportType.Http && error("receiving needs AMQP; use --transport amqp or websocket")
 
-    consumer = make_client(EventHubConsumerClient, get(opts, :auth, "key"), transport;
-        consumer_group=get(opts, :consumer_group, "\$Default"))
+    consumer = make_client(
+        EventHubConsumerClient, get(opts, :auth, "key"), transport;
+        consumer_group = get(opts, :consumer_group, "\$Default")
+    )
     received = Threads.Atomic{Int}(0)
     last_event = Threads.Atomic{Float64}(time())
     out = ReentrantLock()    # callbacks for different partitions may run concurrently
@@ -65,14 +72,17 @@ function main(args)
     Base.exit_on_sigint(false)
     try
         info = get_eventhub_properties(consumer)
-        println("listening on ", info["eventhub_name"], " (partitions ",
-            something(get(opts, :partition_id, nothing), join(info["partition_ids"], ", ")), "); Ctrl-C quits")
-        receive(consumer;
-            partition_id=get(opts, :partition_id, nothing),
-            starting_position=get(opts, :from_beginning, false) ? "-1" : "@latest",
-            max_wait_time=idle,
-            on_partition_initialize=ctx -> lock(() -> println("   (reading partition ", ctx.partition_id, ")"), out),
-            on_error=(ctx, err) -> @warn("receive error", partition = ctx === nothing ? nothing : ctx.partition_id, err)
+        println(
+            "listening on ", info["eventhub_name"], " (partitions ",
+            something(get(opts, :partition_id, nothing), join(info["partition_ids"], ", ")), "); Ctrl-C quits"
+        )
+        receive(
+            consumer;
+            partition_id = get(opts, :partition_id, nothing),
+            starting_position = get(opts, :from_beginning, false) ? "-1" : "@latest",
+            max_wait_time = idle,
+            on_partition_initialize = ctx -> lock(() -> println("   (reading partition ", ctx.partition_id, ")"), out),
+            on_error = (ctx, err) -> @warn("receive error", partition = ctx === nothing ? nothing : ctx.partition_id, err)
         ) do ctx, event
             if event === nothing    # max_wait_time passed without an event on this partition
                 if time() - last_event[] >= idle
@@ -92,15 +102,17 @@ function main(args)
     finally
         close(consumer)
     end
-    println("received ", min(received[], something(exit_after, typemax(Int))), " events")
+    return println("received ", min(received[], something(exit_after, typemax(Int))), " events")
 end
 
 try
     main(ARGS)
 catch err
     err isa AuthenticationError && "entra" in ARGS && occursin("claim", sprint(showerror, err)) || rethrow()
-    println(stderr, "error: ", sprint(showerror, err), "\n\nWith --auth entra your identity needs the ",
+    println(
+        stderr, "error: ", sprint(showerror, err), "\n\nWith --auth entra your identity needs the ",
         "\"Azure Event Hubs Data Owner\" (or Data Receiver) role on the namespace: run ",
-        "scripts/eventhubs-e2e/resources.sh grant and wait a few minutes.")
+        "scripts/eventhubs-e2e/resources.sh grant and wait a few minutes."
+    )
     exit(1)
 end

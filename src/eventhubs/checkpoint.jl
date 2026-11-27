@@ -32,28 +32,32 @@ balancing several consumers inside one process.
 """
 mutable struct InMemoryCheckpointStore <: CheckpointStore
     lock::ReentrantLock
-    ownership::Dict{NTuple{4,String},Dict{String,Any}}
-    checkpoints::Dict{NTuple{4,String},Dict{String,Any}}
+    ownership::Dict{NTuple{4, String}, Dict{String, Any}}
+    checkpoints::Dict{NTuple{4, String}, Dict{String, Any}}
 end
-InMemoryCheckpointStore() = InMemoryCheckpointStore(ReentrantLock(), Dict{NTuple{4,String},Dict{String,Any}}(),
-    Dict{NTuple{4,String},Dict{String,Any}}())
+InMemoryCheckpointStore() = InMemoryCheckpointStore(
+    ReentrantLock(), Dict{NTuple{4, String}, Dict{String, Any}}(),
+    Dict{NTuple{4, String}, Dict{String, Any}}()
+)
 
-_key(d) = (lowercase(string(d["fully_qualified_namespace"])), lowercase(string(d["eventhub_name"])),
-    lowercase(string(d["consumer_group"])), string(d["partition_id"]))
+_key(d) = (
+    lowercase(string(d["fully_qualified_namespace"])), lowercase(string(d["eventhub_name"])),
+    lowercase(string(d["consumer_group"])), string(d["partition_id"]),
+)
 _matches(k, fqns, eh, cg) = k[1] == lowercase(fqns) && k[2] == lowercase(eh) && k[3] == lowercase(cg)
 
 function list_ownership(s::InMemoryCheckpointStore, fully_qualified_namespace, eventhub_name, consumer_group)
-    @lock s.lock [copy(v) for (k, v) in s.ownership if _matches(k, fully_qualified_namespace, eventhub_name, consumer_group)]
+    return @lock s.lock [copy(v) for (k, v) in s.ownership if _matches(k, fully_qualified_namespace, eventhub_name, consumer_group)]
 end
 
 function claim_ownership(s::InMemoryCheckpointStore, ownerships::AbstractVector)
-    claimed = Dict{String,Any}[]
+    claimed = Dict{String, Any}[]
     @lock s.lock for o in ownerships
         k = _key(o)
         current = get(s.ownership, k, nothing)
         etag = get(o, "etag", nothing)
         if current === nothing ? etag === nothing : current["etag"] == etag
-            new = Dict{String,Any}(o)
+            new = Dict{String, Any}(o)
             new["etag"] = string(uuid4())
             new["last_modified_time"] = time()
             s.ownership[k] = new
@@ -64,12 +68,12 @@ function claim_ownership(s::InMemoryCheckpointStore, ownerships::AbstractVector)
 end
 
 function update_checkpoint(s::InMemoryCheckpointStore, checkpoint::AbstractDict)
-    @lock s.lock s.checkpoints[_key(checkpoint)] = Dict{String,Any}(checkpoint)
+    @lock s.lock s.checkpoints[_key(checkpoint)] = Dict{String, Any}(checkpoint)
     return nothing
 end
 
 function list_checkpoints(s::InMemoryCheckpointStore, fully_qualified_namespace, eventhub_name, consumer_group)
-    @lock s.lock [copy(v) for (k, v) in s.checkpoints if _matches(k, fully_qualified_namespace, eventhub_name, consumer_group)]
+    return @lock s.lock [copy(v) for (k, v) in s.checkpoints if _matches(k, fully_qualified_namespace, eventhub_name, consumer_group)]
 end
 
 Base.show(io::IO, s::InMemoryCheckpointStore) =
@@ -91,13 +95,15 @@ mutable struct PartitionContext
     consumer_group::String
     partition_id::String
     owner_id::String
-    last_enqueued_event_properties::Union{Nothing,Dict{String,Any}}
-    checkpoint_store::Union{Nothing,CheckpointStore}
+    last_enqueued_event_properties::Union{Nothing, Dict{String, Any}}
+    checkpoint_store::Union{Nothing, CheckpointStore}
     memory_store::InMemoryCheckpointStore
 end
 
-Base.show(io::IO, c::PartitionContext) = print(io, "PartitionContext(", c.eventhub_name, "/", c.consumer_group,
-    ", partition_id=", repr(c.partition_id), ")")
+Base.show(io::IO, c::PartitionContext) = print(
+    io, "PartitionContext(", c.eventhub_name, "/", c.consumer_group,
+    ", partition_id=", repr(c.partition_id), ")"
+)
 
 """
     update_checkpoint(context::PartitionContext, event=nothing)
@@ -105,9 +111,9 @@ Base.show(io::IO, c::PartitionContext) = print(io, "PartitionContext(", c.eventh
 Record that processing of `event` (and all earlier events of the partition)
 is complete. Without a checkpoint store the checkpoint is kept in memory.
 """
-function update_checkpoint(ctx::PartitionContext, event::Union{Nothing,EventData}=nothing)
+function update_checkpoint(ctx::PartitionContext, event::Union{Nothing, EventData} = nothing)
     event === nothing && return nothing
-    cp = Dict{String,Any}(
+    cp = Dict{String, Any}(
         "fully_qualified_namespace" => ctx.fully_qualified_namespace,
         "eventhub_name" => ctx.eventhub_name,
         "consumer_group" => ctx.consumer_group,

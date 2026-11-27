@@ -34,18 +34,20 @@ const SB_NS = ENV["E2E_SERVICEBUS_NAMESPACE"]
 const QUEUE = ENV["E2E_QUEUE"]
 const STORAGE = ENV["E2E_STORAGE_URL"]
 const RESULTS = get(ENV, "E2E_RESULTS_CONTAINER", "e2e-results")
-const SCOPES = ("https://eventhubs.azure.net/.default", "https://servicebus.azure.net/.default",
-    "https://storage.azure.com/.default")
+const SCOPES = (
+    "https://eventhubs.azure.net/.default", "https://servicebus.azure.net/.default",
+    "https://storage.azure.com/.default",
+)
 
 marker() = "e2e-$TARGET-" * string(UUIDs.uuid4())
 
 function make_credential(name)
     name == "mi-system" && return ManagedIdentityCredential()
-    name == "mi-client-id" && return ManagedIdentityCredential(client_id=ENV["E2E_UAMI_CLIENT_ID"])
-    name == "mi-object-id" && return ManagedIdentityCredential(object_id=ENV["E2E_UAMI_PRINCIPAL_ID"])
-    name == "mi-resource-id" && return ManagedIdentityCredential(resource_id=ENV["E2E_UAMI_RESOURCE_ID"])
+    name == "mi-client-id" && return ManagedIdentityCredential(client_id = ENV["E2E_UAMI_CLIENT_ID"])
+    name == "mi-object-id" && return ManagedIdentityCredential(object_id = ENV["E2E_UAMI_PRINCIPAL_ID"])
+    name == "mi-resource-id" && return ManagedIdentityCredential(resource_id = ENV["E2E_UAMI_RESOURCE_ID"])
     name == "mi-imds-kubelet" && return withenv("AZURE_FEDERATED_TOKEN_FILE" => nothing) do
-        ManagedIdentityCredential(client_id=ENV["E2E_KUBELET_CLIENT_ID"])
+        ManagedIdentityCredential(client_id = ENV["E2E_KUBELET_CLIENT_ID"])
     end
     name == "workload" && return WorkloadIdentityCredential()
     name == "default" && return DefaultAzureCredential()
@@ -57,22 +59,25 @@ function check_tokens(cred)
         tok = get_token(cred, scope)
         (isempty(tok.token) || tok.expires_on < time() + 60) && error("bad token for $scope")
     end
+    return
 end
 
 "Send one event to partition 0 and read it back."
 function check_eventhubs(cred, transport)
     m = marker()
-    start = EventHubProducerClient(EH_NS, EH, cred; transport_type=transport) do p
+    start = EventHubProducerClient(EH_NS, EH, cred; transport_type = transport) do p
         seq = get_partition_properties(p, "0")["last_enqueued_sequence_number"]
-        batch = create_batch(p; partition_id="0")
-        add!(batch, EventData(m; properties=Dict("target" => TARGET)))
+        batch = create_batch(p; partition_id = "0")
+        add!(batch, EventData(m; properties = Dict("target" => TARGET)))
         send_batch(p, batch)
         seq
     end
-    consumer = EventHubConsumerClient(EH_NS, EH, "\$Default", cred; transport_type=transport)
+    consumer = EventHubConsumerClient(EH_NS, EH, "\$Default", cred; transport_type = transport)
     found = Ref(false)
-    task = Threads.@spawn receive(consumer; partition_id="0", starting_position=start,
-        starting_position_inclusive=false, max_wait_time=5) do ctx, ev
+    task = Threads.@spawn receive(
+        consumer; partition_id = "0", starting_position = start,
+        starting_position_inclusive = false, max_wait_time = 5
+    ) do ctx, ev
         if ev !== nothing && body_as_str(ev) == m
             found[] = true
             close(consumer)
@@ -81,28 +86,28 @@ function check_eventhubs(cred, transport)
     timedwait(() -> istaskdone(task), 60.0)
     istaskdone(task) || close(consumer)
     istaskfailed(task) && throw(task.exception)
-    found[] || error("event not received within 60 s")
+    return found[] || error("event not received within 60 s")
 end
 
 "Send one message and receive it in receive-and-delete mode."
 function check_servicebus(cred, transport)
     m = marker()
-    ServiceBusClient(SB_NS, cred; transport_type=transport) do client
-        send_messages(get_queue_sender(client, QUEUE), ServiceBusMessage(m; application_properties=Dict("target" => TARGET)))
-        r = get_queue_receiver(client, QUEUE; receive_mode=ServiceBusReceiveMode.RECEIVE_AND_DELETE, max_wait_time=10)
+    return ServiceBusClient(SB_NS, cred; transport_type = transport) do client
+        send_messages(get_queue_sender(client, QUEUE), ServiceBusMessage(m; application_properties = Dict("target" => TARGET)))
+        r = get_queue_receiver(client, QUEUE; receive_mode = ServiceBusReceiveMode.RECEIVE_AND_DELETE, max_wait_time = 10)
         deadline = time() + 60
         while time() < deadline
-            any(msg -> body_as_str(msg) == m, receive_messages(r; max_message_count=10)) && return
+            any(msg -> body_as_str(msg) == m, receive_messages(r; max_message_count = 10)) && return
         end
         error("message not received within 60 s")
     end
 end
 
 function check_blob(cred)
-    cc = get_container_client(BlobServiceClient(STORAGE; credential=cred), RESULTS)
+    cc = get_container_client(BlobServiceClient(STORAGE; credential = cred), RESULTS)
     name, m = "$TARGET/probe/$(UUIDs.uuid4()).txt", marker()
     upload_blob(cc, name, m)
-    try
+    return try
         content_as_text(download_blob(cc, name)) == m || error("downloaded content differs")
     finally
         delete_blob(get_blob_client(cc, name))
@@ -123,7 +128,7 @@ short_error(err) = first(replace(sprint(showerror, err), r"\s+" => " "), 300)
 
 function main()
     names = filter(!isempty, strip.(split(get(ENV, "E2E_CREDENTIALS", "default"), ',')))
-    rows = Tuple{String,String,String,String}[]      # credential, check, status, detail
+    rows = Tuple{String, String, String, String}[]      # credential, check, status, detail
     passed_blob = nothing
     println("target $TARGET, credentials: ", join(names, ", "))
     for name in names
@@ -138,7 +143,7 @@ function main()
             t = time()
             row = try
                 f(cred)
-                (name, check, "PASS", "$(round(time() - t; digits=1)) s")
+                (name, check, "PASS", "$(round(time() - t; digits = 1)) s")
             catch err
                 (name, check, "FAIL", short_error(err))
             end
@@ -149,8 +154,10 @@ function main()
     end
     failed = count(r -> r[3] == "FAIL", rows)
     report = IOBuffer()
-    println(report, "target: $TARGET\nfinished: $(now(UTC)) UTC\nresult: ",
-        failed == 0 ? "all $(length(rows)) checks passed" : "$failed of $(length(rows)) checks FAILED", "\n")
+    println(
+        report, "target: $TARGET\nfinished: $(now(UTC)) UTC\nresult: ",
+        failed == 0 ? "all $(length(rows)) checks passed" : "$failed of $(length(rows)) checks FAILED", "\n"
+    )
     for (n, c, s, d) in rows
         println(report, rpad(n, 16), rpad(c, 22), rpad(s, 6), d)
     end
@@ -159,11 +166,11 @@ function main()
     if passed_blob === nothing
         println("no credential could write to blob storage; results are only in this log")
     else
-        cc = get_container_client(BlobServiceClient(STORAGE; credential=passed_blob), RESULTS)
+        cc = get_container_client(BlobServiceClient(STORAGE; credential = passed_blob), RESULTS)
         upload_blob(cc, "$TARGET/$(Dates.format(now(UTC), "yyyymmdd-HHMMSS")).txt", text)
-        upload_blob(cc, "$TARGET/latest.txt", text; overwrite=true)
+        upload_blob(cc, "$TARGET/latest.txt", text; overwrite = true)
     end
-    exit(failed == 0 ? 0 : 1)
+    return exit(failed == 0 ? 0 : 1)
 end
 
 main()

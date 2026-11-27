@@ -13,7 +13,7 @@ const ENV_FILE = joinpath(@__DIR__, ".env")
 
 "Settings from `ENV`, with the values in `.env` as fallback."
 function load_settings()
-    s = Dict{String,String}()
+    s = Dict{String, String}()
     if isfile(ENV_FILE)
         for line in eachline(ENV_FILE)
             m = match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)='?([^']*)'?\s*$", line)
@@ -46,18 +46,20 @@ end
 An `EventHubProducerClient` or `EventHubConsumerClient` authenticated with the
 connection string (`auth == "key"`) or with `DefaultAzureCredential` (`"entra"`).
 """
-function make_client(T::Type, auth::AbstractString, transport; consumer_group="\$Default")
+function make_client(T::Type, auth::AbstractString, transport; consumer_group = "\$Default")
     s = load_settings()
     hub = setting(s, "EVENTHUB_NAME")
     extra = T === EventHubConsumerClient ? (; consumer_group) : (;)
     if auth == "key"
-        return from_connection_string(T, setting(s, "EVENTHUB_CONNECTION_STRING"); eventhub_name=hub,
-            transport_type=transport, extra...)
+        return from_connection_string(
+            T, setting(s, "EVENTHUB_CONNECTION_STRING"); eventhub_name = hub,
+            transport_type = transport, extra...
+        )
     elseif auth == "entra"
         ns, cred = setting(s, "EVENTHUB_NAMESPACE"), DefaultAzureCredential()
         return T === EventHubConsumerClient ?
-               T(ns, hub, consumer_group, cred; transport_type=transport) :
-               T(ns, hub, cred; transport_type=transport)
+            T(ns, hub, consumer_group, cred; transport_type = transport) :
+            T(ns, hub, cred; transport_type = transport)
     end
     error("unknown auth $(repr(auth)); use key or entra")
 end
@@ -69,16 +71,16 @@ Minimal command line parsing. `spec` maps option names (`"--name"` or `"-n"`)
 to `(key, kind)` with `kind` one of `:flag`, `:value` or `:multi` (repeatable).
 """
 function parse_args(args, spec)
-    opts = Dict{Symbol,Any}()
+    opts = Dict{Symbol, Any}()
     rest = String[]
     i = 1
     while i <= length(args)
         a = args[i]
         if a == "--"
-            append!(rest, args[i+1:end])
+            append!(rest, args[(i + 1):end])
             break
         elseif startswith(a, "-") && length(a) > 1
-            name, inline = occursin('=', a) && startswith(a, "--") ? split(a, '='; limit=2) : (a, nothing)
+            name, inline = occursin('=', a) && startswith(a, "--") ? split(a, '='; limit = 2) : (a, nothing)
             haskey(spec, name) || error("unknown option $name (see --help)")
             key, kind = spec[name]
             if kind === :flag
@@ -100,10 +102,10 @@ function parse_args(args, spec)
 end
 
 "Print the leading comment block of `file` (the usage text) and exit."
-function usage(file; status=0)
+function usage(file; status = 0)
     for line in eachline(file)
         startswith(line, "#") || break
         println(replace(line, r"^# ?" => ""))
     end
-    exit(status)
+    return exit(status)
 end

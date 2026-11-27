@@ -16,8 +16,10 @@ const MIN_MAX_FRAME_SIZE = 512
 Encode a complete frame. `payload` (for transfer frames) is appended after the
 performative.
 """
-function encode_frame(performative; channel::UInt16=UInt16(0), frame_type::UInt8=FRAME_TYPE_AMQP,
-    payload::Union{Nothing,AbstractVector{UInt8}}=nothing)
+function encode_frame(
+        performative; channel::UInt16 = UInt16(0), frame_type::UInt8 = FRAME_TYPE_AMQP,
+        payload::Union{Nothing, AbstractVector{UInt8}} = nothing
+    )
     w = ByteWriter(64 + (payload === nothing ? 0 : length(payload)))
     w.len = FRAME_HEADER_SIZE
     encode!(w, performative)
@@ -46,7 +48,7 @@ struct Frame
     frame_type::UInt8
     channel::UInt16
     body::Any
-    payload::Union{Nothing,SubArray{UInt8,1,Vector{UInt8},Tuple{UnitRange{Int}},true}}
+    payload::Union{Nothing, SubArray{UInt8, 1, Vector{UInt8}, Tuple{UnitRange{Int}}, true}}
 end
 
 """

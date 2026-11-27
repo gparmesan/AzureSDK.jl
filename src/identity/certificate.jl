@@ -47,15 +47,17 @@ function _pem_certificates(text::AbstractString)
     return ders
 end
 
-function _pem_private_key(data::Vector{UInt8}, password::Union{Nothing,AbstractString})
+function _pem_private_key(data::Vector{UInt8}, password::Union{Nothing, AbstractString})
     pass = password === nothing ? "" : String(password)
     bio = ccall((:BIO_new_mem_buf, libcrypto), Ptr{Cvoid}, (Ptr{UInt8}, Cint), data, length(data))
     bio == C_NULL && throw(_openssl_error("failed to allocate BIO"))
     try
         # A non-NULL passphrase argument with a NULL callback makes OpenSSL use
         # it directly instead of prompting on the terminal.
-        pkey = ccall((:PEM_read_bio_PrivateKey, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cstring),
-            bio, C_NULL, C_NULL, pass)
+        pkey = ccall(
+            (:PEM_read_bio_PrivateKey, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cstring),
+            bio, C_NULL, C_NULL, pass
+        )
         pkey == C_NULL && throw(_openssl_error("could not load the private key (wrong password or unsupported format)"))
         return pkey
     finally
@@ -74,7 +76,7 @@ function _x509_der(x509::Ptr{Cvoid})
     return buf
 end
 
-function _load_pkcs12(data::Vector{UInt8}, password::Union{Nothing,AbstractString})
+function _load_pkcs12(data::Vector{UInt8}, password::Union{Nothing, AbstractString})
     p12 = GC.@preserve data begin
         pp = Ref(pointer(data))
         ccall((:d2i_PKCS12, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Ptr{UInt8}}, Clong), C_NULL, pp, length(data))
@@ -84,15 +86,17 @@ function _load_pkcs12(data::Vector{UInt8}, password::Union{Nothing,AbstractStrin
     cert = Ref{Ptr{Cvoid}}(C_NULL)
     ca = Ref{Ptr{Cvoid}}(C_NULL)
     try
-        ok = ccall((:PKCS12_parse, libcrypto), Cint,
+        ok = ccall(
+            (:PKCS12_parse, libcrypto), Cint,
             (Ptr{Cvoid}, Cstring, Ptr{Ptr{Cvoid}}, Ptr{Ptr{Cvoid}}, Ptr{Ptr{Cvoid}}),
-            p12, password === nothing ? "" : String(password), pkey, cert, ca)
+            p12, password === nothing ? "" : String(password), pkey, cert, ca
+        )
         ok == 1 || throw(_openssl_error("could not parse PKCS12 data (wrong password?)"))
         (pkey[] == C_NULL || cert[] == C_NULL) && throw(ArgumentError("PKCS12 data must contain a certificate and its private key"))
         chain = [_x509_der(cert[])]
         if ca[] != C_NULL
             n = ccall((:OPENSSL_sk_num, libcrypto), Cint, (Ptr{Cvoid},), ca[])
-            for i in 0:n-1
+            for i in 0:(n - 1)
                 x = ccall((:OPENSSL_sk_value, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid}, Cint), ca[], i)
                 x == C_NULL || push!(chain, _x509_der(x))
             end
@@ -104,8 +108,10 @@ function _load_pkcs12(data::Vector{UInt8}, password::Union{Nothing,AbstractStrin
         pkey[] == C_NULL || ccall((:EVP_PKEY_free, libcrypto), Cvoid, (Ptr{Cvoid},), pkey[])
         cert[] == C_NULL || ccall((:X509_free, libcrypto), Cvoid, (Ptr{Cvoid},), cert[])
         if ca[] != C_NULL
-            ccall((:OPENSSL_sk_pop_free, libcrypto), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}), ca[],
-                cglobal((:X509_free, libcrypto)))
+            ccall(
+                (:OPENSSL_sk_pop_free, libcrypto), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}), ca[],
+                cglobal((:X509_free, libcrypto))
+            )
         end
         ccall((:PKCS12_free, libcrypto), Cvoid, (Ptr{Cvoid},), p12)
     end
@@ -119,7 +125,7 @@ const EVP_PKEY_RSA = 6
 Load a PEM (certificate + private key) or PKCS#12 blob. Only RSA keys are
 supported (as required by Microsoft Entra ID).
 """
-function load_certificate(data::Vector{UInt8}, password::Union{Nothing,AbstractString}=nothing)
+function load_certificate(data::Vector{UInt8}, password::Union{Nothing, AbstractString} = nothing)
     _clear_openssl_errors()
     text = String(copy(data))
     pkey, chain = if occursin("-----BEGIN", text)
@@ -139,20 +145,26 @@ end
 
 "Sign `data` with RSASSA-PKCS1-v1_5 / SHA-256 (JWS RS256)."
 function sign_rs256(k::CertificateKey, data::Vector{UInt8})
-    @lock k.lock begin
+    return @lock k.lock begin
         k.pkey == C_NULL && throw(ArgumentError("certificate key has been freed"))
         ctx = ccall((:EVP_MD_CTX_new, libcrypto), Ptr{Cvoid}, ())
         ctx == C_NULL && throw(_openssl_error("EVP_MD_CTX_new failed"))
         try
             md = ccall((:EVP_sha256, libcrypto), Ptr{Cvoid}, ())
-            ccall((:EVP_DigestSignInit, libcrypto), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                ctx, C_NULL, md, C_NULL, k.pkey) == 1 || throw(_openssl_error("EVP_DigestSignInit failed"))
+            ccall(
+                (:EVP_DigestSignInit, libcrypto), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
+                ctx, C_NULL, md, C_NULL, k.pkey
+            ) == 1 || throw(_openssl_error("EVP_DigestSignInit failed"))
             len = Ref{Csize_t}(0)
-            ccall((:EVP_DigestSign, libcrypto), Cint, (Ptr{Cvoid}, Ptr{UInt8}, Ref{Csize_t}, Ptr{UInt8}, Csize_t),
-                ctx, C_NULL, len, data, length(data)) == 1 || throw(_openssl_error("EVP_DigestSign failed"))
+            ccall(
+                (:EVP_DigestSign, libcrypto), Cint, (Ptr{Cvoid}, Ptr{UInt8}, Ref{Csize_t}, Ptr{UInt8}, Csize_t),
+                ctx, C_NULL, len, data, length(data)
+            ) == 1 || throw(_openssl_error("EVP_DigestSign failed"))
             sig = Vector{UInt8}(undef, len[])
-            ccall((:EVP_DigestSign, libcrypto), Cint, (Ptr{Cvoid}, Ptr{UInt8}, Ref{Csize_t}, Ptr{UInt8}, Csize_t),
-                ctx, sig, len, data, length(data)) == 1 || throw(_openssl_error("EVP_DigestSign failed"))
+            ccall(
+                (:EVP_DigestSign, libcrypto), Cint, (Ptr{Cvoid}, Ptr{UInt8}, Ref{Csize_t}, Ptr{UInt8}, Csize_t),
+                ctx, sig, len, data, length(data)
+            ) == 1 || throw(_openssl_error("EVP_DigestSign failed"))
             return resize!(sig, len[])
         finally
             ccall((:EVP_MD_CTX_free, libcrypto), Cvoid, (Ptr{Cvoid},), ctx)
@@ -168,12 +180,16 @@ base64url(s::AbstractString) = base64url(Vector{UInt8}(codeunits(s)))
 
 Build and sign the JWT client assertion used by the certificate credential.
 """
-function client_assertion_jwt(k::CertificateKey, client_id::AbstractString, audience::AbstractString;
-    send_chain::Bool=false, lifetime::Integer=600, now::Integer=floor(Int, time()))
-    header = Dict{String,Any}("alg" => "RS256", "typ" => "JWT", "x5t" => base64url(k.thumbprint_sha1))
+function client_assertion_jwt(
+        k::CertificateKey, client_id::AbstractString, audience::AbstractString;
+        send_chain::Bool = false, lifetime::Integer = 600, now::Integer = floor(Int, time())
+    )
+    header = Dict{String, Any}("alg" => "RS256", "typ" => "JWT", "x5t" => base64url(k.thumbprint_sha1))
     send_chain && (header["x5c"] = [base64encode(d) for d in k.chain_der])
-    payload = Dict{String,Any}("aud" => audience, "iss" => client_id, "sub" => client_id,
-        "jti" => string(uuid4()), "nbf" => now, "iat" => now, "exp" => now + lifetime)
+    payload = Dict{String, Any}(
+        "aud" => audience, "iss" => client_id, "sub" => client_id,
+        "jti" => string(uuid4()), "nbf" => now, "iat" => now, "exp" => now + lifetime
+    )
     signing_input = string(base64url(JSON.json(header)), ".", base64url(JSON.json(payload)))
     sig = sign_rs256(k, Vector{UInt8}(codeunits(signing_input)))
     return string(signing_input, ".", base64url(sig))

@@ -7,24 +7,26 @@
 
 using AzureSDK.EventHubs
 
-const CONN = get(ENV, "EVENTHUB_CONNECTION_STRING",
-    "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;")
+const CONN = get(
+    ENV, "EVENTHUB_CONNECTION_STRING",
+    "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+)
 const HUB = get(ENV, "EVENTHUB_NAME", "eh1")
 
-from_connection_string(EventHubProducerClient, CONN; eventhub_name=HUB) do producer
+from_connection_string(EventHubProducerClient, CONN; eventhub_name = HUB) do producer
     println("partitions: ", get_partition_ids(producer))
-    batch = create_batch(producer; partition_key="sensor-1")
+    batch = create_batch(producer; partition_key = "sensor-1")
     for i in 1:5
-        add!(batch, EventData("""{"reading": $i}"""; properties=Dict("unit" => "C")))
+        add!(batch, EventData("""{"reading": $i}"""; properties = Dict("unit" => "C")))
     end
     send_batch(producer, batch)
     println("sent ", length(batch), " events (", size_in_bytes(batch), " bytes)")
 end
 
-consumer = from_connection_string(EventHubConsumerClient, CONN; eventhub_name=HUB, consumer_group="\$default")
+consumer = from_connection_string(EventHubConsumerClient, CONN; eventhub_name = HUB, consumer_group = "\$default")
 received = Ref(0)
 # stop after 10 s without new events
-receive(consumer; starting_position="-1", max_wait_time=10) do ctx, event
+receive(consumer; starting_position = "-1", max_wait_time = 10) do ctx, event
     if event === nothing
         close(consumer)
         return

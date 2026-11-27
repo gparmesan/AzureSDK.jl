@@ -12,16 +12,18 @@ automatically.
 """
 mutable struct AutoLockRenewer
     max_lock_renewal_duration::Float64
-    on_lock_renew_failure::Union{Nothing,Function}
+    on_lock_renew_failure::Union{Nothing, Function}
     lock::ReentrantLock
     tasks::Vector{Task}
     closed::Bool
 end
-AutoLockRenewer(; max_lock_renewal_duration::Real=300, on_lock_renew_failure=nothing) =
+AutoLockRenewer(; max_lock_renewal_duration::Real = 300, on_lock_renew_failure = nothing) =
     AutoLockRenewer(Float64(max_lock_renewal_duration), on_lock_renew_failure, ReentrantLock(), Task[], false)
 
-Base.show(io::IO, a::AutoLockRenewer) = print(io, "AutoLockRenewer(max_lock_renewal_duration=",
-    a.max_lock_renewal_duration, ", active=", count(!istaskdone, a.tasks), a.closed ? ", closed" : "", ")")
+Base.show(io::IO, a::AutoLockRenewer) = print(
+    io, "AutoLockRenewer(max_lock_renewal_duration=",
+    a.max_lock_renewal_duration, ", active=", count(!istaskdone, a.tasks), a.closed ? ", closed" : "", ")"
+)
 
 _locked_until(m::ServiceBusReceivedMessage) = getfield(m, :locked_until_utc)
 _locked_until(s::ServiceBusSession) = s.locked_until_utc
@@ -37,8 +39,10 @@ Keep renewing the lock of `target` (a received message or a
 `ServiceBusSession`) until it is settled, the receiver closes, or the
 duration elapses.
 """
-function register!(a::AutoLockRenewer, r::ServiceBusReceiver, target::Union{ServiceBusReceivedMessage,ServiceBusSession};
-    max_lock_renewal_duration::Union{Nothing,Real}=nothing, on_lock_renew_failure=nothing)
+function register!(
+        a::AutoLockRenewer, r::ServiceBusReceiver, target::Union{ServiceBusReceivedMessage, ServiceBusSession};
+        max_lock_renewal_duration::Union{Nothing, Real} = nothing, on_lock_renew_failure = nothing
+    )
     a.closed && throw(ServiceBusServiceError("The AutoLockRenewer has been closed."))
     duration = Float64(something(max_lock_renewal_duration, a.max_lock_renewal_duration))
     callback = something(on_lock_renew_failure, a.on_lock_renew_failure, Some(nothing))
@@ -55,7 +59,7 @@ function _renew_loop(a::AutoLockRenewer, r::ServiceBusReceiver, target, stop_at:
     while !a.closed && !r.closed && !_done(target) && time() < stop_at
         until = _locked_until(target)
         due = until === nothing ? time() :
-              Dates.datetime2unix(until) - buffer
+            Dates.datetime2unix(until) - buffer
         if time() >= due
             try
                 _renew!(r, target)
@@ -63,7 +67,7 @@ function _renew_loop(a::AutoLockRenewer, r::ServiceBusReceiver, target, stop_at:
                 (a.closed || r.closed || _done(target)) && return
                 if callback !== nothing
                     try
-                        callback(target, AutoLockRenewFailed("Failed to auto-renew the lock"; error=err))
+                        callback(target, AutoLockRenewFailed("Failed to auto-renew the lock"; error = err))
                     catch cb_err
                         @error "on_lock_renew_failure raised an exception" exception = cb_err
                     end
@@ -76,6 +80,7 @@ function _renew_loop(a::AutoLockRenewer, r::ServiceBusReceiver, target, stop_at:
             sleep(min(0.5, max(0.05, due - time())))
         end
     end
+    return
 end
 
 """

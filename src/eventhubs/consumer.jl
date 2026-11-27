@@ -27,7 +27,7 @@ mutable struct EventHubConsumerClient <: EventHubClient
     eventhub_name::String
     consumer_group::String
     conn::ClientConnection
-    checkpoint_store::Union{Nothing,CheckpointStore}
+    checkpoint_store::Union{Nothing, CheckpointStore}
     memory_store::InMemoryCheckpointStore
     load_balancing_interval::Float64
     ownership_expiration::Float64
@@ -38,31 +38,37 @@ mutable struct EventHubConsumerClient <: EventHubClient
     cond::Threads.Condition
     receiving::Bool
     closed::Bool
-    pumps::Dict{String,Any}
+    pumps::Dict{String, Any}
     mgmt::Ref{Any}
     mgmt_lock::ReentrantLock
 end
 
-function EventHubConsumerClient(fully_qualified_namespace::AbstractString, eventhub_name::AbstractString,
-    consumer_group::AbstractString, credential; checkpoint_store::Union{Nothing,CheckpointStore}=nothing,
-    load_balancing_interval::Real=30.0, partition_ownership_expiration_interval::Union{Nothing,Real}=nothing,
-    load_balancing_strategy=LoadBalancingStrategy.GREEDY, prefetch::Integer=300,
-    use_development_emulator::Bool=false, kwargs...)
-    cfg = ClientConfig(fully_qualified_namespace, credential, EVENTHUBS_SCOPE, "eventhub";
-        use_development_emulator=use_development_emulator, kwargs...)
+function EventHubConsumerClient(
+        fully_qualified_namespace::AbstractString, eventhub_name::AbstractString,
+        consumer_group::AbstractString, credential; checkpoint_store::Union{Nothing, CheckpointStore} = nothing,
+        load_balancing_interval::Real = 30.0, partition_ownership_expiration_interval::Union{Nothing, Real} = nothing,
+        load_balancing_strategy = LoadBalancingStrategy.GREEDY, prefetch::Integer = 300,
+        use_development_emulator::Bool = false, kwargs...
+    )
+    cfg = ClientConfig(
+        fully_qualified_namespace, credential, EVENTHUBS_SCOPE, "eventhub";
+        use_development_emulator = use_development_emulator, kwargs...
+    )
     cfg.transport_type == TransportType.Http &&
         throw(ArgumentError("EventHubConsumerClient requires TransportType.Amqp or TransportType.AmqpOverWebsocket"))
     isempty(consumer_group) && throw(ArgumentError("consumer_group must not be empty"))
     prefetch < 1 && throw(ArgumentError("prefetch must be at least 1"))
     strategy = load_balancing_strategy isa LoadBalancingStrategy.T ? load_balancing_strategy :
-               lowercase(string(load_balancing_strategy)) == "balanced" ? LoadBalancingStrategy.BALANCED :
-               LoadBalancingStrategy.GREEDY
+        lowercase(string(load_balancing_strategy)) == "balanced" ? LoadBalancingStrategy.BALANCED :
+        LoadBalancingStrategy.GREEDY
     lk = ReentrantLock()
-    return EventHubConsumerClient(cfg, _check_hub_name(eventhub_name), String(consumer_group),
+    return EventHubConsumerClient(
+        cfg, _check_hub_name(eventhub_name), String(consumer_group),
         Messaging.make_connection(cfg), checkpoint_store, InMemoryCheckpointStore(), Float64(load_balancing_interval),
         Float64(something(partition_ownership_expiration_interval, 6 * load_balancing_interval)), strategy,
-        string(uuid4()), Int(prefetch), lk, Threads.Condition(lk), false, false, Dict{String,Any}(),
-        Ref{Any}(nothing), ReentrantLock())
+        string(uuid4()), Int(prefetch), lk, Threads.Condition(lk), false, false, Dict{String, Any}(),
+        Ref{Any}(nothing), ReentrantLock()
+    )
 end
 
 function EventHubConsumerClient(f::Function, args...; kwargs...)
@@ -74,12 +80,16 @@ function EventHubConsumerClient(f::Function, args...; kwargs...)
     end
 end
 
-function from_connection_string(::Type{EventHubConsumerClient}, conn_str::AbstractString; consumer_group::AbstractString,
-    eventhub_name=nothing, kwargs...)
+function from_connection_string(
+        ::Type{EventHubConsumerClient}, conn_str::AbstractString; consumer_group::AbstractString,
+        eventhub_name = nothing, kwargs...
+    )
     p, name, cred = _from_connection_string_args(conn_str, eventhub_name)
     host = p.port === nothing ? p.fully_qualified_namespace : "$(p.fully_qualified_namespace):$(p.port)"
-    return EventHubConsumerClient(host, name, consumer_group, cred; use_development_emulator=p.use_development_emulator,
-        kwargs...)
+    return EventHubConsumerClient(
+        host, name, consumer_group, cred; use_development_emulator = p.use_development_emulator,
+        kwargs...
+    )
 end
 function from_connection_string(f::Function, T::Type{EventHubConsumerClient}, conn_str::AbstractString; kwargs...)
     client = from_connection_string(T, conn_str; kwargs...)
@@ -91,8 +101,10 @@ function from_connection_string(f::Function, T::Type{EventHubConsumerClient}, co
 end
 
 function Base.show(io::IO, c::EventHubConsumerClient)
-    print(io, "EventHubConsumerClient(", c.config.fully_qualified_namespace, "/", c.eventhub_name, ", consumer_group=",
-        repr(c.consumer_group), c.closed ? ", closed" : "", ")")
+    return print(
+        io, "EventHubConsumerClient(", c.config.fully_qualified_namespace, "/", c.eventhub_name, ", consumer_group=",
+        repr(c.consumer_group), c.closed ? ", closed" : "", ")"
+    )
 end
 
 # ---------------------------------------------------------------------------
@@ -133,13 +145,17 @@ function _open_receiver(c::EventHubConsumerClient, pid::String, pos, inclusive::
     AMQP.authorize!(conn, Messaging.resource_uri(c.config, c.eventhub_name))
     _, session, _ = AMQP.acquire!(conn)
     expr = selector_expression(pos, inclusive)
-    source = AMQP.Source(address="$(c.eventhub_name)/ConsumerGroups/$(c.consumer_group)/Partitions/$pid",
-        filter=Dict{Any,Any}(SELECTOR_FILTER => AMQPDescribed(SELECTOR_FILTER, expr)))
-    props = owner_level === nothing ? nothing : Dict{Symbol,Any}(EPOCH_PROPERTY => Int64(owner_level))
+    source = AMQP.Source(
+        address = "$(c.eventhub_name)/ConsumerGroups/$(c.consumer_group)/Partitions/$pid",
+        filter = Dict{Any, Any}(SELECTOR_FILTER => AMQPDescribed(SELECTOR_FILTER, expr))
+    )
+    props = owner_level === nothing ? nothing : Dict{Symbol, Any}(EPOCH_PROPERTY => Int64(owner_level))
     caps = track ? [RUNTIME_METRIC_CAPABILITY] : nothing
-    return AMQP.attach_receiver(session, "EHReceiver-$(uuid4())", source;
-        prefetch=c.prefetch, snd_settle_mode=AMQP.SND_SETTLED, rcv_settle_mode=AMQP.RCV_FIRST,
-        properties=props, desired_capabilities=caps, timeout=c.config.auth_timeout)
+    return AMQP.attach_receiver(
+        session, "EHReceiver-$(uuid4())", source;
+        prefetch = c.prefetch, snd_settle_mode = AMQP.SND_SETTLED, rcv_settle_mode = AMQP.RCV_FIRST,
+        properties = props, desired_capabilities = caps, timeout = c.config.auth_timeout
+    )
 end
 
 # ---------------------------------------------------------------------------
@@ -150,18 +166,18 @@ mutable struct PartitionPump
     partition_id::String
     stop::Threads.Atomic{Bool}
     link::Any
-    task::Union{Nothing,Task}
+    task::Union{Nothing, Task}
 end
 
 Base.@kwdef struct ReceiveOptions
     on_event::Function
     batch::Bool = false
     max_batch_size::Int = 300
-    max_wait_time::Union{Nothing,Float64} = nothing
-    on_error::Union{Nothing,Function} = nothing
-    on_partition_initialize::Union{Nothing,Function} = nothing
-    on_partition_close::Union{Nothing,Function} = nothing
-    owner_level::Union{Nothing,Int} = nothing
+    max_wait_time::Union{Nothing, Float64} = nothing
+    on_error::Union{Nothing, Function} = nothing
+    on_partition_initialize::Union{Nothing, Function} = nothing
+    on_partition_close::Union{Nothing, Function} = nothing
+    owner_level::Union{Nothing, Int} = nothing
     track_last_enqueued_event_properties::Bool = false
     starting_position::Any = nothing
     starting_position_inclusive::Any = false
@@ -172,7 +188,7 @@ function _call_error_handler(opts::ReceiveOptions, ctx, err)
         @warn "EventHubConsumerClient error" partition = ctx === nothing ? nothing : ctx.partition_id exception = err
         return
     end
-    try
+    return try
         opts.on_error(ctx, err)
     catch cb_err
         @error "on_error callback raised an exception" exception = (cb_err, catch_backtrace())
@@ -183,12 +199,12 @@ function _update_last_enqueued!(ctx::PartitionContext, d)
     m = d.raw_amqp_message
     da = m === nothing ? nothing : m.delivery_annotations
     da === nothing && return
-    props = Dict{String,Any}()
+    props = Dict{String, Any}()
     v = get(da, PROP_LAST_ENQUEUED_SEQUENCE_NUMBER, nothing); v === nothing || (props["sequence_number"] = v)
     v = get(da, PROP_LAST_ENQUEUED_OFFSET, nothing); v === nothing || (props["offset"] = string(v))
     v = get(da, PROP_LAST_ENQUEUED_TIME_UTC, nothing); v === nothing || (props["enqueued_time"] = v)
     v = get(da, PROP_RUNTIME_INFO_RETRIEVAL_TIME_UTC, nothing); v === nothing || (props["retrieval_time"] = v)
-    isempty(props) || (ctx.last_enqueued_event_properties = props)
+    return isempty(props) || (ctx.last_enqueued_event_properties = props)
 end
 
 function _starting_position(c::EventHubConsumerClient, pid::String, opts::ReceiveOptions)
@@ -209,8 +225,10 @@ end
 
 function _run_pump(c::EventHubConsumerClient, pump::PartitionPump, opts::ReceiveOptions)
     pid = pump.partition_id
-    ctx = PartitionContext(c.config.fully_qualified_namespace, c.eventhub_name, c.consumer_group, pid, c.owner_id,
-        nothing, c.checkpoint_store, c.memory_store)
+    ctx = PartitionContext(
+        c.config.fully_qualified_namespace, c.eventhub_name, c.consumer_group, pid, c.owner_id,
+        nothing, c.checkpoint_store, c.memory_store
+    )
     reason = CloseReason.SHUTDOWN
     initialized = false
     attempt = 0
@@ -237,7 +255,7 @@ function _run_pump(c::EventHubConsumerClient, pump::PartitionPump, opts::Receive
                 attempt = 0
                 timeout = opts.max_wait_time === nothing ? 0.0 : opts.max_wait_time
                 while !pump.stop[] && !c.closed
-                    first = AMQP.receive_delivery(link; timeout=timeout)
+                    first = AMQP.receive_delivery(link; timeout = timeout)
                     if first === nothing
                         (pump.stop[] || c.closed) && break
                         opts.max_wait_time === nothing && continue
@@ -266,11 +284,13 @@ function _run_pump(c::EventHubConsumerClient, pump::PartitionPump, opts::Receive
                 _call_error_handler(opts, ctx, mapped)
                 attempt += 1
                 delay = Messaging.is_retriable(err) ? AzureCore.backoff_delay(c.config.retry, min(attempt, 8)) :
-                        c.load_balancing_interval
+                    c.load_balancing_interval
                 _interruptible_sleep(c, pump, delay)
             finally
                 pump.link = nothing
-                link === nothing || @async try AMQP.detach(link; timeout=5.0) catch end
+                link === nothing || @async try
+                    AMQP.detach(link; timeout = 5.0)
+                catch end
             end
         end
     finally
@@ -286,7 +306,7 @@ function _run_pump(c::EventHubConsumerClient, pump::PartitionPump, opts::Receive
 end
 
 function _deliver(opts::ReceiveOptions, ctx::PartitionContext, events::Vector{EventData})
-    try
+    return try
         if opts.batch
             opts.on_event(ctx, events)
         elseif isempty(events)
@@ -307,6 +327,7 @@ function _interruptible_sleep(c::EventHubConsumerClient, pump, seconds::Real)
     while time() < deadline && !c.closed && (pump === nothing || !pump.stop[])
         sleep(min(0.25, deadline - time()))
     end
+    return
 end
 
 function _start_pump!(c::EventHubConsumerClient, pid::String, opts::ReceiveOptions)
@@ -316,13 +337,15 @@ function _start_pump!(c::EventHubConsumerClient, pid::String, opts::ReceiveOptio
     return pump
 end
 
-function _stop_pump!(c::EventHubConsumerClient, pid::String; wait_for::Bool=true)
+function _stop_pump!(c::EventHubConsumerClient, pid::String; wait_for::Bool = true)
     pump = @lock c.lock pop!(c.pumps, pid, nothing)
     pump === nothing && return
     pump.stop[] = true
     link = pump.link
-    link === nothing || @async try AMQP.detach(link; timeout=5.0) catch end
-    if wait_for && pump.task !== nothing
+    link === nothing || @async try
+        AMQP.detach(link; timeout = 5.0)
+    catch end
+    return if wait_for && pump.task !== nothing
         try
             wait(pump.task)
         catch
@@ -335,9 +358,11 @@ end
 # ---------------------------------------------------------------------------
 
 function _ownership_dict(c::EventHubConsumerClient, pid::String, etag)
-    return Dict{String,Any}("fully_qualified_namespace" => c.config.fully_qualified_namespace,
+    return Dict{String, Any}(
+        "fully_qualified_namespace" => c.config.fully_qualified_namespace,
         "eventhub_name" => c.eventhub_name, "consumer_group" => c.consumer_group, "partition_id" => pid,
-        "owner_id" => c.owner_id, "etag" => etag)
+        "owner_id" => c.owner_id, "etag" => etag
+    )
 end
 
 """
@@ -349,11 +374,11 @@ function _balance!(c::EventHubConsumerClient, partition_ids::Vector{String})
     store = c.checkpoint_store::CheckpointStore
     now = time()
     ownerships = list_ownership(store, c.config.fully_qualified_namespace, c.eventhub_name, c.consumer_group)
-    by_pid = Dict{String,Dict{String,Any}}(string(o["partition_id"]) => o for o in ownerships)
+    by_pid = Dict{String, Dict{String, Any}}(string(o["partition_id"]) => o for o in ownerships)
     is_active(o) = !isempty(string(something(get(o, "owner_id", ""), ""))) &&
-                   now - Float64(something(get(o, "last_modified_time", 0.0), 0.0)) < c.ownership_expiration
+        now - Float64(something(get(o, "last_modified_time", 0.0), 0.0)) < c.ownership_expiration
     active = [o for o in ownerships if is_active(o) && string(o["partition_id"]) in partition_ids]
-    counts = Dict{String,Int}(c.owner_id => 0)
+    counts = Dict{String, Int}(c.owner_id => 0)
     for o in active
         counts[string(o["owner_id"])] = get(counts, string(o["owner_id"]), 0) + 1
     end
@@ -363,7 +388,7 @@ function _balance!(c::EventHubConsumerClient, partition_ids::Vector{String})
     others_over = count(((k, v),) -> k != c.owner_id && v > per, counts)
     target = my_count < per ? per : (my_count == per && extra > 0 && others_over < extra ? per + 1 : my_count)
     need = max(0, target - my_count)
-    to_claim = Dict{String,Any}[]
+    to_claim = Dict{String, Any}[]
     if need > 0
         n = c.strategy == LoadBalancingStrategy.GREEDY ? need : 1
         active_pids = Set(string(o["partition_id"]) for o in active)
@@ -376,9 +401,11 @@ function _balance!(c::EventHubConsumerClient, partition_ids::Vector{String})
         while remaining > 0 && my_count + length(to_claim) < per
             victims = [(k, v) for (k, v) in counts if k != c.owner_id && v > per]
             isempty(victims) && break
-            victim = first(sort(victims; by=x -> -x[2]))[1]
-            candidates = [o for o in active if o["owner_id"] == victim &&
-                                               !any(t -> t["partition_id"] == o["partition_id"], to_claim)]
+            victim = first(sort(victims; by = x -> -x[2]))[1]
+            candidates = [
+                o for o in active if o["owner_id"] == victim &&
+                    !any(t -> t["partition_id"] == o["partition_id"], to_claim)
+            ]
             isempty(candidates) && break
             o = rand(candidates)
             push!(to_claim, _ownership_dict(c, string(o["partition_id"]), get(o, "etag", nothing)))
@@ -397,13 +424,15 @@ end
 function _relinquish!(c::EventHubConsumerClient, pids)
     store = c.checkpoint_store
     (store === nothing || isempty(pids)) && return
-    try
+    return try
         current = list_ownership(store, c.config.fully_qualified_namespace, c.eventhub_name, c.consumer_group)
-        release = [begin
-            d = Dict{String,Any}(o)
-            d["owner_id"] = ""
-            d
-        end for o in current if o["owner_id"] == c.owner_id && string(o["partition_id"]) in pids]
+        release = [
+            begin
+                d = Dict{String, Any}(o)
+                d["owner_id"] = ""
+                d
+            end for o in current if o["owner_id"] == c.owner_id && string(o["partition_id"]) in pids
+        ]
         isempty(release) || claim_ownership(store, release)
     catch err
         @debug "failed to relinquish partition ownership" exception = err
@@ -437,8 +466,8 @@ from inside a callback).
 
 Callbacks for different partitions may run concurrently on different threads.
 """
-function receive(c::EventHubConsumerClient, on_event::Function; partition_id=nothing, kwargs...)
-    return _receive(c, ReceiveOptions(; on_event=on_event, batch=false, _receive_kwargs(kwargs)...), partition_id)
+function receive(c::EventHubConsumerClient, on_event::Function; partition_id = nothing, kwargs...)
+    return _receive(c, ReceiveOptions(; on_event = on_event, batch = false, _receive_kwargs(kwargs)...), partition_id)
 end
 
 """
@@ -448,11 +477,17 @@ Like [`receive`](@ref) but calls `on_event_batch(partition_context, events::Vect
 with up to `max_batch_size` events at a time. With `max_wait_time`, the callback
 is called with an empty vector when no events arrived in that interval.
 """
-function receive_batch(c::EventHubConsumerClient, on_event_batch::Function; partition_id=nothing,
-    max_batch_size::Integer=300, kwargs...)
+function receive_batch(
+        c::EventHubConsumerClient, on_event_batch::Function; partition_id = nothing,
+        max_batch_size::Integer = 300, kwargs...
+    )
     max_batch_size < 1 && throw(ArgumentError("max_batch_size must be at least 1"))
-    return _receive(c, ReceiveOptions(; on_event=on_event_batch, batch=true, max_batch_size=Int(max_batch_size),
-            _receive_kwargs(kwargs)...), partition_id)
+    return _receive(
+        c, ReceiveOptions(;
+            on_event = on_event_batch, batch = true, max_batch_size = Int(max_batch_size),
+            _receive_kwargs(kwargs)...
+        ), partition_id
+    )
 end
 
 # do-block forms: receive(consumer; kwargs...) do ctx, event ... end
@@ -460,9 +495,11 @@ receive(on_event::Function, c::EventHubConsumerClient; kwargs...) = receive(c, o
 receive_batch(on_event_batch::Function, c::EventHubConsumerClient; kwargs...) = receive_batch(c, on_event_batch; kwargs...)
 
 function _receive_kwargs(kwargs)
-    allowed = (:max_wait_time, :on_error, :on_partition_initialize, :on_partition_close, :owner_level,
-        :track_last_enqueued_event_properties, :starting_position, :starting_position_inclusive)
-    d = Dict{Symbol,Any}()
+    allowed = (
+        :max_wait_time, :on_error, :on_partition_initialize, :on_partition_close, :owner_level,
+        :track_last_enqueued_event_properties, :starting_position, :starting_position_inclusive,
+    )
+    d = Dict{Symbol, Any}()
     for (k, v) in kwargs
         k in allowed || throw(ArgumentError("unsupported keyword argument $k"))
         v === nothing && continue
@@ -494,7 +531,7 @@ function _receive(c::EventHubConsumerClient, opts::ReceiveOptions, partition_id)
                     owned = _balance!(c, pids)
                     running = @lock c.lock Set(keys(c.pumps))
                     for pid in setdiff(running, owned)
-                        _stop_pump!(c, pid; wait_for=false)
+                        _stop_pump!(c, pid; wait_for = false)
                     end
                     for pid in setdiff(owned, running)
                         _start_pump!(c, pid, opts)
@@ -520,7 +557,7 @@ function _receive(c::EventHubConsumerClient, opts::ReceiveOptions, partition_id)
     finally
         owned = @lock c.lock collect(keys(c.pumps))
         for pid in owned
-            _stop_pump!(c, pid; wait_for=true)
+            _stop_pump!(c, pid; wait_for = true)
         end
         _relinquish!(c, owned)
         @lock c.lock c.receiving = false
@@ -543,7 +580,9 @@ function Base.close(c::EventHubConsumerClient)
     for p in pumps
         p.stop[] = true
         l = p.link
-        l === nothing || try AMQP.detach(l; timeout=2.0) catch end
+        l === nothing || try
+            AMQP.detach(l; timeout = 2.0)
+        catch end
     end
     # wait (bounded) for a running receive to wind down before closing the connection,
     # unless close was called from one of the consumer's own callbacks

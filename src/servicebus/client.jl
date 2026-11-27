@@ -6,18 +6,18 @@ const SERVICEBUS_SCOPE = "https://servicebus.azure.net/.default"
     ServiceBusReceiveMode.PEEK_LOCK / ServiceBusReceiveMode.RECEIVE_AND_DELETE
 """
 module ServiceBusReceiveMode
-@enum T PEEK_LOCK RECEIVE_AND_DELETE
+    @enum T PEEK_LOCK RECEIVE_AND_DELETE
 end
 
 """
     ServiceBusSubQueue.DEAD_LETTER / ServiceBusSubQueue.TRANSFER_DEAD_LETTER
 """
 module ServiceBusSubQueue
-@enum T DEAD_LETTER TRANSFER_DEAD_LETTER
+    @enum T DEAD_LETTER TRANSFER_DEAD_LETTER
 end
 
 module ServiceBusSessionFilter
-@enum T NEXT_AVAILABLE
+    @enum T NEXT_AVAILABLE
 end
 
 "Pass as `session_id` to receive from the next available session."
@@ -33,22 +33,26 @@ Result of [`parse_connection_string`](@ref): `fully_qualified_namespace`,
 struct ServiceBusConnectionStringProperties
     fully_qualified_namespace::String
     endpoint::String
-    entity_path::Union{Nothing,String}
-    shared_access_key_name::Union{Nothing,String}
-    shared_access_key::Union{Nothing,String}
-    shared_access_signature::Union{Nothing,String}
+    entity_path::Union{Nothing, String}
+    shared_access_key_name::Union{Nothing, String}
+    shared_access_key::Union{Nothing, String}
+    shared_access_signature::Union{Nothing, String}
 end
 Base.show(io::IO, p::ServiceBusConnectionStringProperties) =
-    print(io, "ServiceBusConnectionStringProperties(fully_qualified_namespace=", repr(p.fully_qualified_namespace),
-        ", entity_path=", repr(p.entity_path), ", shared_access_key_name=", repr(p.shared_access_key_name), ")")
+    print(
+    io, "ServiceBusConnectionStringProperties(fully_qualified_namespace=", repr(p.fully_qualified_namespace),
+    ", entity_path=", repr(p.entity_path), ", shared_access_key_name=", repr(p.shared_access_key_name), ")"
+)
 
 """
     parse_connection_string(conn_str) -> ServiceBusConnectionStringProperties
 """
 function parse_connection_string(conn_str::AbstractString)
     p = Messaging.parse_messaging_connection_string(conn_str)
-    return ServiceBusConnectionStringProperties(p.fully_qualified_namespace, p.endpoint, p.entity_path,
-        p.shared_access_key_name, p.shared_access_key, p.shared_access_signature)
+    return ServiceBusConnectionStringProperties(
+        p.fully_qualified_namespace, p.endpoint, p.entity_path,
+        p.shared_access_key_name, p.shared_access_key, p.shared_access_signature
+    )
 end
 
 """
@@ -69,17 +73,21 @@ Keyword arguments: `transport_type` (`TransportType.Amqp`,
 """
 mutable struct ServiceBusClient
     config::ClientConfig
-    conn::Union{Nothing,ClientConnection}
-    entity_name::Union{Nothing,String}
+    conn::Union{Nothing, ClientConnection}
+    entity_name::Union{Nothing, String}
     lock::ReentrantLock
     handlers::Vector{Any}
     closed::Bool
 end
 
-function ServiceBusClient(fully_qualified_namespace::AbstractString, credential; use_development_emulator::Bool=false,
-    _entity_name=nothing, kwargs...)
-    cfg = ClientConfig(fully_qualified_namespace, credential, SERVICEBUS_SCOPE, "servicebus";
-        use_development_emulator=use_development_emulator, kwargs...)
+function ServiceBusClient(
+        fully_qualified_namespace::AbstractString, credential; use_development_emulator::Bool = false,
+        _entity_name = nothing, kwargs...
+    )
+    cfg = ClientConfig(
+        fully_qualified_namespace, credential, SERVICEBUS_SCOPE, "servicebus";
+        use_development_emulator = use_development_emulator, kwargs...
+    )
     conn = cfg.transport_type == TransportType.Http ? nothing : Messaging.make_connection(cfg)
     return ServiceBusClient(cfg, conn, _entity_name, ReentrantLock(), Any[], false)
 end
@@ -102,8 +110,10 @@ emulator's `UseDevelopmentEmulator=true` strings).
 function from_connection_string(::Type{ServiceBusClient}, conn_str::AbstractString; kwargs...)
     p = Messaging.parse_messaging_connection_string(conn_str)
     host = p.port === nothing ? p.fully_qualified_namespace : "$(p.fully_qualified_namespace):$(p.port)"
-    return ServiceBusClient(host, Messaging.connection_string_credential(p);
-        use_development_emulator=p.use_development_emulator, _entity_name=p.entity_path, kwargs...)
+    return ServiceBusClient(
+        host, Messaging.connection_string_credential(p);
+        use_development_emulator = p.use_development_emulator, _entity_name = p.entity_path, kwargs...
+    )
 end
 function from_connection_string(f::Function, T::Type{ServiceBusClient}, conn_str::AbstractString; kwargs...)
     client = from_connection_string(T, conn_str; kwargs...)
@@ -114,8 +124,10 @@ function from_connection_string(f::Function, T::Type{ServiceBusClient}, conn_str
     end
 end
 
-Base.show(io::IO, c::ServiceBusClient) = print(io, "ServiceBusClient(", c.config.fully_qualified_namespace, ", ",
-    c.config.transport_type, c.closed ? ", closed" : "", ")")
+Base.show(io::IO, c::ServiceBusClient) = print(
+    io, "ServiceBusClient(", c.config.fully_qualified_namespace, ", ",
+    c.config.transport_type, c.closed ? ", closed" : "", ")"
+)
 
 "The namespace host name."
 fully_qualified_namespace(c::ServiceBusClient) = c.config.fully_qualified_namespace
@@ -168,14 +180,16 @@ Base.isopen(c::ServiceBusClient) = !c.closed
 abstract type ServiceBusHandler end
 
 _check_open(h::ServiceBusHandler) = (h.closed || h.client.closed) &&
-                                    throw(ServiceBusClientClosedError("The handler has been closed."))
+    throw(ServiceBusClientClosedError("The handler has been closed."))
 
-function _run(f, h::ServiceBusHandler, op::AbstractString; timeout=nothing, retry::Bool=true)
+function _run(f, h::ServiceBusHandler, op::AbstractString; timeout = nothing, retry::Bool = true)
     _check_open(h)
     deadline = timeout === nothing ? nothing : time() + timeout
-    policy = retry ? h.client.config.retry : RetryOptions(retry_total=0)
-    return Messaging.run_with_retry(f, policy, () -> h.closed || h.client.closed; map_error=map_servicebus_error,
-        operation=op, deadline=deadline)
+    policy = retry ? h.client.config.retry : RetryOptions(retry_total = 0)
+    return Messaging.run_with_retry(
+        f, policy, () -> h.closed || h.client.closed; map_error = map_servicebus_error,
+        operation = op, deadline = deadline
+    )
 end
 
 _audience(h::ServiceBusHandler) = Messaging.resource_uri(h.client.config, h.entity_path)
@@ -196,8 +210,10 @@ end
 Send a request to the entity's `\$management` node. Returns the response
 body (`nothing` for 204 No Content).
 """
-function _mgmt_request(h::ServiceBusHandler, operation::AbstractString, body::Dict{String,Any};
-    timeout::Real=60.0, associated_link_name=nothing)
+function _mgmt_request(
+        h::ServiceBusHandler, operation::AbstractString, body::Dict{String, Any};
+        timeout::Real = 60.0, associated_link_name = nothing
+    )
     conn = h.client.conn::ClientConnection
     AMQP.authorize!(conn, _audience(h))
     mgmt = @lock h.lock begin
@@ -211,10 +227,12 @@ function _mgmt_request(h::ServiceBusHandler, operation::AbstractString, body::Di
             cached[1]
         end
     end
-    ap = Dict{String,Any}("operation" => String(operation),
-        "com.microsoft:server-timeout" => UInt32(round(Int, min(timeout, 3600) * 1000)))
+    ap = Dict{String, Any}(
+        "operation" => String(operation),
+        "com.microsoft:server-timeout" => UInt32(round(Int, min(timeout, 3600) * 1000))
+    )
     associated_link_name === nothing || (ap["associated-link-name"] = String(associated_link_name))
-    resp = AMQP.request(mgmt, AMQPMessage(body_type=:value, body=body, application_properties=ap); timeout=timeout)
+    resp = AMQP.request(mgmt, AMQPMessage(body_type = :value, body = body, application_properties = ap); timeout = timeout)
     status, desc, cond = AMQP.response_status(resp)
     status == 200 && return resp.body
     status == 204 && return nothing

@@ -9,9 +9,9 @@ the spelling they were stored with (Python: `azure.core.utils.CaseInsensitiveDic
 Used for blob and container metadata, whose names Azure treats
 case-insensitively. Comparison with another dictionary also ignores key case.
 """
-struct CaseInsensitiveDict{V} <: AbstractDict{String,V}
-    d::Dict{String,Pair{String,V}}          # lowercase key => (original key => value)
-    CaseInsensitiveDict{V}() where {V} = new{V}(Dict{String,Pair{String,V}}())
+struct CaseInsensitiveDict{V} <: AbstractDict{String, V}
+    d::Dict{String, Pair{String, V}}          # lowercase key => (original key => value)
+    CaseInsensitiveDict{V}() where {V} = new{V}(Dict{String, Pair{String, V}}())
 end
 function CaseInsensitiveDict{V}(itr) where {V}
     d = CaseInsensitiveDict{V}()
@@ -20,10 +20,10 @@ function CaseInsensitiveDict{V}(itr) where {V}
     end
     return d
 end
-CaseInsensitiveDict(itr::AbstractDict{K,V}) where {K,V} = CaseInsensitiveDict{V}(itr)
+CaseInsensitiveDict(itr::AbstractDict{K, V}) where {K, V} = CaseInsensitiveDict{V}(itr)
 CaseInsensitiveDict(itr) = CaseInsensitiveDict{Any}(itr)
 CaseInsensitiveDict(ps::Pair...) = CaseInsensitiveDict{Any}(ps)
-CaseInsensitiveDict(p::Pair{<:Any,V}, ps::Pair{<:Any,V}...) where {V} = CaseInsensitiveDict{V}((p, ps...))
+CaseInsensitiveDict(p::Pair{<:Any, V}, ps::Pair{<:Any, V}...) where {V} = CaseInsensitiveDict{V}((p, ps...))
 
 _ci(k) = lowercase(string(k))
 Base.length(d::CaseInsensitiveDict) = length(d.d)
@@ -48,7 +48,7 @@ Base.pop!(d::CaseInsensitiveDict, k) = pop!(d.d, _ci(k)).second
 Base.pop!(d::CaseInsensitiveDict, k, default) = haskey(d, k) ? pop!(d, k) : default
 Base.empty!(d::CaseInsensitiveDict) = (empty!(d.d); d)
 Base.copy(d::CaseInsensitiveDict{V}) where {V} = CaseInsensitiveDict{V}(d)
-Base.empty(::CaseInsensitiveDict, ::Type{K}, ::Type{V}) where {K,V} = CaseInsensitiveDict{V}()
+Base.empty(::CaseInsensitiveDict, ::Type{K}, ::Type{V}) where {K, V} = CaseInsensitiveDict{V}()
 
 function _ci_equal(a::AbstractDict, b::AbstractDict)
     length(a) == length(b) || return false

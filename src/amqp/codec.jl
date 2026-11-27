@@ -83,7 +83,7 @@ mutable struct ByteWriter
     data::Vector{UInt8}
     len::Int
 end
-ByteWriter(capacity::Integer=256) = ByteWriter(Vector{UInt8}(undef, capacity), 0)
+ByteWriter(capacity::Integer = 256) = ByteWriter(Vector{UInt8}(undef, capacity), 0)
 
 @inline function ensure!(w::ByteWriter, n::Int)
     need = w.len + n
@@ -100,12 +100,12 @@ end
     return w
 end
 
-@inline function writebe!(w::ByteWriter, x::T) where {T<:Union{UInt16,UInt32,UInt64,UInt128}}
+@inline function writebe!(w::ByteWriter, x::T) where {T <: Union{UInt16, UInt32, UInt64, UInt128}}
     n = sizeof(T)
     ensure!(w, n)
     base = w.len
     @inbounds for i in 1:n
-        w.data[base+i] = (x >> (8 * (n - i))) % UInt8
+        w.data[base + i] = (x >> (8 * (n - i))) % UInt8
     end
     w.len += n
     return w
@@ -132,8 +132,8 @@ function writebytes!(w::ByteWriter, s::String)
 end
 
 @inline function patchbe32!(w::ByteWriter, pos::Int, x::UInt32)
-    @inbounds for i in 1:4
-        w.data[pos+i-1] = (x >> (8 * (4 - i))) % UInt8
+    return @inbounds for i in 1:4
+        w.data[pos + i - 1] = (x >> (8 * (4 - i))) % UInt8
     end
 end
 
@@ -212,18 +212,18 @@ encode!(w::ByteWriter, x::Bool) = writebyte!(w, x ? TC_TRUE : TC_FALSE)
 encode!(w::ByteWriter, x::UInt8) = (writebyte!(w, TC_UBYTE); writebyte!(w, x))
 encode!(w::ByteWriter, x::UInt16) = (writebyte!(w, TC_USHORT); writebe!(w, x))
 function encode!(w::ByteWriter, x::UInt32)
-    if x == 0
+    return if x == 0
         writebyte!(w, TC_UINT0)
-    elseif x < 0x100
+    elseif x < 0x0100
         writebyte!(w, TC_SMALLUINT); writebyte!(w, x % UInt8)
     else
         writebyte!(w, TC_UINT); writebe!(w, x)
     end
 end
 function encode!(w::ByteWriter, x::UInt64)
-    if x == 0
+    return if x == 0
         writebyte!(w, TC_ULONG0)
-    elseif x < 0x100
+    elseif x < 0x0100
         writebyte!(w, TC_SMALLULONG); writebyte!(w, x % UInt8)
     else
         writebyte!(w, TC_ULONG); writebe!(w, x)
@@ -232,14 +232,14 @@ end
 encode!(w::ByteWriter, x::Int8) = (writebyte!(w, TC_BYTE); writebyte!(w, reinterpret(UInt8, x)))
 encode!(w::ByteWriter, x::Int16) = (writebyte!(w, TC_SHORT); writebe!(w, x))
 function encode!(w::ByteWriter, x::Int32)
-    if -128 <= x <= 127
+    return if -128 <= x <= 127
         writebyte!(w, TC_SMALLINT); writebyte!(w, reinterpret(UInt8, x % Int8))
     else
         writebyte!(w, TC_INT); writebe!(w, x)
     end
 end
 function encode!(w::ByteWriter, x::Int64)
-    if -128 <= x <= 127
+    return if -128 <= x <= 127
         writebyte!(w, TC_SMALLLONG); writebyte!(w, reinterpret(UInt8, x % Int8))
     else
         writebyte!(w, TC_LONG); writebe!(w, x)
@@ -252,46 +252,46 @@ encode!(w::ByteWriter, x::Dates.DateTime) = (writebyte!(w, TC_TIMESTAMP); writeb
 encode!(w::ByteWriter, x::UUID) = (writebyte!(w, TC_UUID); writebe!(w, x.value))
 function encode!(w::ByteWriter, x::AMQPDecimal)
     writebyte!(w, x.code)
-    writebytes!(w, x.bytes)
+    return writebytes!(w, x.bytes)
 end
 
 function encode!(w::ByteWriter, x::AbstractVector{UInt8})
     n = length(x)
-    if n < 0x100
+    if n < 0x0100
         writebyte!(w, TC_VBIN8); writebyte!(w, n % UInt8)
     else
         n <= typemax(UInt32) || throw(ArgumentError("binary value too large for AMQP"))
         writebyte!(w, TC_VBIN32); writebe!(w, UInt32(n))
     end
-    writebytes!(w, x)
+    return writebytes!(w, x)
 end
 
 function encode!(w::ByteWriter, x::AbstractString)
     s = String(x)
     n = sizeof(s)
-    if n < 0x100
+    if n < 0x0100
         writebyte!(w, TC_STR8); writebyte!(w, n % UInt8)
     else
         writebyte!(w, TC_STR32); writebe!(w, UInt32(n))
     end
-    writebytes!(w, s)
+    return writebytes!(w, s)
 end
 
 function encode!(w::ByteWriter, x::Symbol)
     s = String(x)
     n = sizeof(s)
-    if n < 0x100
+    if n < 0x0100
         writebyte!(w, TC_SYM8); writebyte!(w, n % UInt8)
     else
         writebyte!(w, TC_SYM32); writebe!(w, UInt32(n))
     end
-    writebytes!(w, s)
+    return writebytes!(w, s)
 end
 
 function encode!(w::ByteWriter, x::AMQPDescribed)
     writebyte!(w, TC_DESCRIBED)
     encode!(w, x.descriptor)
-    encode!(w, x.value)
+    return encode!(w, x.value)
 end
 
 # Composite (list/map) encoding reserves a list32/map32 header, writes the
@@ -305,11 +305,11 @@ end
 
 function end_compound!(w::ByteWriter, start::Int, count::Int, code8::UInt8, code32::UInt8)
     body = w.len - (start + 8)          # bytes of the encoded elements
-    if body + 1 < 0x100 && count < 0x100
+    if body + 1 < 0x0100 && count < 0x0100
         # list8/map8: code, size(1), count(1)  -> shift elements 6 bytes left
         @inbounds w.data[start] = code8
-        @inbounds w.data[start+1] = (body + 1) % UInt8
-        @inbounds w.data[start+2] = count % UInt8
+        @inbounds w.data[start + 1] = (body + 1) % UInt8
+        @inbounds w.data[start + 2] = count % UInt8
         if body > 0
             copyto!(w.data, start + 3, w.data, start + 9, body)
         end
@@ -332,7 +332,7 @@ function encode_list!(w::ByteWriter, items)
         encode!(w, item)
         count += 1
     end
-    end_compound!(w, start, count, TC_LIST8, TC_LIST32)
+    return end_compound!(w, start, count, TC_LIST8, TC_LIST32)
 end
 
 encode!(w::ByteWriter, x::AbstractVector) = encode_list!(w, x)
@@ -344,7 +344,7 @@ function encode!(w::ByteWriter, x::AbstractDict)
         encode!(w, k)
         encode!(w, v)
     end
-    end_compound!(w, start, 2 * length(x), TC_MAP8, TC_MAP32)
+    return end_compound!(w, start, 2 * length(x), TC_MAP8, TC_MAP32)
 end
 
 # Map where the keys are encoded as AMQP symbols (annotations, fields).
@@ -357,7 +357,7 @@ function encode!(w::ByteWriter, x::SymbolKeyed)
         encode!(w, k isa Symbol ? k : Symbol(k))
         encode!(w, v)
     end
-    end_compound!(w, start, 2 * length(x.dict), TC_MAP8, TC_MAP32)
+    return end_compound!(w, start, 2 * length(x.dict), TC_MAP8, TC_MAP32)
 end
 
 # --- arrays -----------------------------------------------------------------
@@ -376,13 +376,13 @@ array_ctor(::Type{Float64}, _) = TC_DOUBLE
 array_ctor(::Type{Char}, _) = TC_CHAR
 array_ctor(::Type{Dates.DateTime}, _) = TC_TIMESTAMP
 array_ctor(::Type{UUID}, _) = TC_UUID
-array_ctor(::Type{Symbol}, v) = all(s -> sizeof(String(s)) < 0x100, v) ? TC_SYM8 : TC_SYM32
-array_ctor(::Type{<:AbstractString}, v) = all(s -> sizeof(s) < 0x100, v) ? TC_STR8 : TC_STR32
-array_ctor(::Type{<:AbstractVector{UInt8}}, v) = all(s -> length(s) < 0x100, v) ? TC_VBIN8 : TC_VBIN32
+array_ctor(::Type{Symbol}, v) = all(s -> sizeof(String(s)) < 0x0100, v) ? TC_SYM8 : TC_SYM32
+array_ctor(::Type{<:AbstractString}, v) = all(s -> sizeof(s) < 0x0100, v) ? TC_STR8 : TC_STR32
+array_ctor(::Type{<:AbstractVector{UInt8}}, v) = all(s -> length(s) < 0x0100, v) ? TC_VBIN8 : TC_VBIN32
 array_ctor(::Type{T}, _) where {T} = throw(ArgumentError("cannot encode AMQP array of $T"))
 
 function encode_array_element!(w::ByteWriter, code::UInt8, x)
-    if code == TC_BOOLEAN
+    return if code == TC_BOOLEAN
         writebyte!(w, x ? 0x01 : 0x00)
     elseif code == TC_UBYTE || code == TC_BYTE
         writebyte!(w, reinterpret(UInt8, x))
@@ -412,7 +412,7 @@ function encode!(w::ByteWriter, x::AMQPArray{T}) where {T}
     for el in x.elements
         encode_array_element!(w, code, el)
     end
-    end_compound!(w, start, length(x.elements), TC_ARRAY8, TC_ARRAY32)
+    return end_compound!(w, start, length(x.elements), TC_ARRAY8, TC_ARRAY32)
 end
 
 "Encode `value` into a fresh byte vector."
@@ -428,7 +428,7 @@ end
 
 const MAX_DECODE_DEPTH = 64
 
-mutable struct ByteReader{V<:AbstractVector{UInt8}}
+mutable struct ByteReader{V <: AbstractVector{UInt8}}
     data::V
     pos::Int      # index of next byte to read
     stop::Int     # last readable index
@@ -453,12 +453,12 @@ end
     return b
 end
 
-@inline function readbe!(r::ByteReader, ::Type{T}) where {T<:Union{UInt16,UInt32,UInt64,UInt128}}
+@inline function readbe!(r::ByteReader, ::Type{T}) where {T <: Union{UInt16, UInt32, UInt64, UInt128}}
     n = sizeof(T)
     need(r, n)
     x = zero(T)
-    @inbounds for i in 0:n-1
-        x = (x << 8) | T(r.data[r.pos+i])
+    @inbounds for i in 0:(n - 1)
+        x = (x << 8) | T(r.data[r.pos + i])
     end
     r.pos += n
     return x
@@ -471,7 +471,7 @@ end
 
 @inline function read_nbytes!(r::ByteReader, n::Integer)
     need(r, n)
-    v = r.data[r.pos:r.pos+n-1]
+    v = r.data[r.pos:(r.pos + n - 1)]
     r.pos += n
     return Vector{UInt8}(v)
 end
@@ -511,8 +511,10 @@ function wire_symbol(s::AbstractString)
     sym = _existing_symbol(str)
     sym === nothing || return sym
     @lock _WIRE_SYMBOL_LOCK begin
-        (_new_wire_symbols[] >= MAX_NEW_WIRE_SYMBOLS ||
-         _new_wire_symbol_bytes[] + sizeof(str) > MAX_NEW_WIRE_SYMBOL_BYTES) &&
+        (
+            _new_wire_symbols[] >= MAX_NEW_WIRE_SYMBOLS ||
+                _new_wire_symbol_bytes[] + sizeof(str) > MAX_NEW_WIRE_SYMBOL_BYTES
+        ) &&
             throw(AMQPDecodeError("too many distinct AMQP symbols received"))
         _new_wire_symbols[] += 1
         _new_wire_symbol_bytes[] += sizeof(str)
@@ -523,13 +525,13 @@ end
 readsymbol!(r::ByteReader, n::Integer) = wire_symbol(readstring!(r, n))
 
 @inline function checked_char(u::UInt32)
-    (u > 0x10ffff || 0xd800 <= u <= 0xdfff) && throw(AMQPDecodeError("invalid AMQP char"))
+    (u > 0x0010ffff || 0xd800 <= u <= 0xdfff) && throw(AMQPDecodeError("invalid AMQP char"))
     return Char(u)
 end
 
 # Hook for composite types: code => (list -> value). Populated by the
 # performative/section definitions.
-const DESCRIBED_DECODERS = Dict{UInt64,Function}()
+const DESCRIBED_DECODERS = Dict{UInt64, Function}()
 
 """
     decode(r::ByteReader) -> value
@@ -628,7 +630,7 @@ function decode_value(r::ByteReader, code::UInt8, depth::Int)
     elseif code == TC_ARRAY8 || code == TC_ARRAY32
         return decode_array(r, code == TC_ARRAY8, depth)
     else
-        throw(AMQPDecodeError("unknown AMQP type constructor 0x$(string(code, base=16))"))
+        throw(AMQPDecodeError("unknown AMQP type constructor 0x$(string(code, base = 16))"))
     end
 end
 
@@ -668,10 +670,10 @@ function decode_map(r::ByteReader, small::Bool, depth::Int)
     count, endpos = compound_header!(r, small)
     isodd(count) && throw(AMQPDecodeError("AMQP map with odd element count"))
     count > endpos - r.pos + 1 && throw(AMQPDecodeError("AMQP map count exceeds its size"))
-    d = Dict{Any,Any}()
+    d = Dict{Any, Any}()
     sizehint!(d, count ÷ 2)
     sub = ByteReader(r.data, r.pos, endpos)
-    for _ in 1:(count÷2)
+    for _ in 1:(count ÷ 2)
         k = decode_value(sub, readbyte!(sub), depth + 1)
         v = decode_value(sub, readbyte!(sub), depth + 1)
         d[k] = v
@@ -685,8 +687,10 @@ end
 # validate the declared count before allocating.
 function array_element_min_size(code::UInt8)
     code in (TC_NULL, TC_TRUE, TC_FALSE, TC_UINT0, TC_ULONG0, TC_LIST0) && return 0
-    code in (TC_BOOLEAN, TC_UBYTE, TC_BYTE, TC_SMALLUINT, TC_SMALLULONG, TC_SMALLINT, TC_SMALLLONG,
-        TC_VBIN8, TC_STR8, TC_SYM8) && return 1
+    code in (
+        TC_BOOLEAN, TC_UBYTE, TC_BYTE, TC_SMALLUINT, TC_SMALLULONG, TC_SMALLINT, TC_SMALLLONG,
+        TC_VBIN8, TC_STR8, TC_SYM8,
+    ) && return 1
     code in (TC_USHORT, TC_SHORT) && return 2
     code in (TC_UINT, TC_INT, TC_FLOAT, TC_CHAR, TC_DECIMAL32, TC_VBIN32, TC_STR32, TC_SYM32) && return 4
     code in (TC_ULONG, TC_LONG, TC_DOUBLE, TC_TIMESTAMP, TC_DECIMAL64) && return 8

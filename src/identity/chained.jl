@@ -16,39 +16,51 @@ Username/password authentication is not supported (Microsoft has deprecated
 it; it does not work with multi-factor authentication).
 """
 struct EnvironmentCredential <: TokenCredential
-    credential::Union{Nothing,TokenCredential}
+    credential::Union{Nothing, TokenCredential}
     unavailable_message::String
 end
-function EnvironmentCredential(; authority=nothing, kwargs...)
+function EnvironmentCredential(; authority = nothing, kwargs...)
     env(k) = get(ENV, k, "")
     tenant, client = env("AZURE_TENANT_ID"), env("AZURE_CLIENT_ID")
     allowed = filter(!isempty, split(env("AZURE_ADDITIONALLY_ALLOWED_TENANTS"), ';'))
     if !isempty(tenant) && !isempty(client) && !isempty(env("AZURE_CLIENT_SECRET"))
-        return EnvironmentCredential(ClientSecretCredential(tenant, client, env("AZURE_CLIENT_SECRET");
-                authority=authority, additionally_allowed_tenants=allowed), "")
+        return EnvironmentCredential(
+            ClientSecretCredential(
+                tenant, client, env("AZURE_CLIENT_SECRET");
+                authority = authority, additionally_allowed_tenants = allowed
+            ), ""
+        )
     elseif !isempty(tenant) && !isempty(client) && !isempty(env("AZURE_CLIENT_CERTIFICATE_PATH"))
         pw = env("AZURE_CLIENT_CERTIFICATE_PASSWORD")
         chain = lowercase(env("AZURE_CLIENT_SEND_CERTIFICATE_CHAIN")) in ("1", "true")
         cred = try
-            ClientCertificateCredential(tenant, client, env("AZURE_CLIENT_CERTIFICATE_PATH");
-                password=isempty(pw) ? nothing : pw, send_certificate_chain=chain, authority=authority,
-                additionally_allowed_tenants=allowed)
+            ClientCertificateCredential(
+                tenant, client, env("AZURE_CLIENT_CERTIFICATE_PATH");
+                password = isempty(pw) ? nothing : pw, send_certificate_chain = chain, authority = authority,
+                additionally_allowed_tenants = allowed
+            )
         catch err
-            return EnvironmentCredential(nothing,
-                "EnvironmentCredential: the certificate in AZURE_CLIENT_CERTIFICATE_PATH could not be loaded ($(sprint(showerror, err)))")
+            return EnvironmentCredential(
+                nothing,
+                "EnvironmentCredential: the certificate in AZURE_CLIENT_CERTIFICATE_PATH could not be loaded ($(sprint(showerror, err)))"
+            )
         end
         return EnvironmentCredential(cred, "")
     elseif !isempty(env("AZURE_USERNAME")) && !isempty(env("AZURE_PASSWORD"))
-        return EnvironmentCredential(nothing,
-            "EnvironmentCredential: username/password authentication is not supported by this package")
+        return EnvironmentCredential(
+            nothing,
+            "EnvironmentCredential: username/password authentication is not supported by this package"
+        )
     end
-    return EnvironmentCredential(nothing,
-        "EnvironmentCredential authentication unavailable. Environment variables are not fully configured.")
+    return EnvironmentCredential(
+        nothing,
+        "EnvironmentCredential authentication unavailable. Environment variables are not fully configured."
+    )
 end
 function Base.show(io::IO, c::EnvironmentCredential)
     print(io, "EnvironmentCredential(")
     c.credential === nothing ? print(io, "unavailable") : show(io, c.credential)
-    print(io, ")")
+    return print(io, ")")
 end
 
 function AzureCore.get_token_info(c::EnvironmentCredential, scopes::AbstractString...; kwargs...)
@@ -65,7 +77,7 @@ to the next credential; any other failure stops the chain and raises a
 """
 mutable struct ChainedTokenCredential <: TokenCredential
     credentials::Vector{TokenCredential}
-    successful::Union{Nothing,TokenCredential}
+    successful::Union{Nothing, TokenCredential}
     remember_successful::Bool
 end
 function ChainedTokenCredential(credentials::TokenCredential...)
@@ -94,15 +106,21 @@ function AzureCore.get_token_info(c::ChainedTokenCredential, scopes::AbstractStr
             err isa InterruptException && rethrow()
             msg = err isa AzureError ? err.message : sprint(showerror, err)
             push!(history, "$(nameof(typeof(cred))): $msg")
-            throw(ClientAuthenticationError(
-                "$(nameof(typeof(c))) failed to retrieve a token from the included credentials.\nAttempted credentials:\n\t" *
-                join(history, "\n\t"); error=err))
+            throw(
+                ClientAuthenticationError(
+                    "$(nameof(typeof(c))) failed to retrieve a token from the included credentials.\nAttempted credentials:\n\t" *
+                        join(history, "\n\t"); error = err
+                )
+            )
         end
     end
-    throw(ClientAuthenticationError(
-        "$(nameof(typeof(c))) failed to retrieve a token from the included credentials.\nAttempted credentials:\n\t" *
-        join(history, "\n\t") *
-        "\nSee https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot for troubleshooting guidance (it applies to this package as well)."))
+    throw(
+        ClientAuthenticationError(
+            "$(nameof(typeof(c))) failed to retrieve a token from the included credentials.\nAttempted credentials:\n\t" *
+                join(history, "\n\t") *
+                "\nSee https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot for troubleshooting guidance (it applies to this package as well)."
+        )
+    )
 end
 
 """
@@ -130,26 +148,32 @@ workload identity, managed identity only), or the name of one credential
 (e.g. `ManagedIdentityCredential`) to restrict the chain. Once a credential
 succeeds it is used for all later requests.
 """
-function DefaultAzureCredential(; exclude_environment_credential::Bool=false,
-    exclude_workload_identity_credential::Bool=false,
-    exclude_managed_identity_credential::Bool=false,
-    exclude_cli_credential::Bool=false,
-    exclude_developer_cli_credential::Bool=false,
-    exclude_powershell_credential::Bool=true,
-    exclude_shared_token_cache_credential::Bool=true,
-    exclude_visual_studio_code_credential::Bool=true,
-    exclude_interactive_browser_credential::Bool=true,
-    managed_identity_client_id=get(ENV, "AZURE_CLIENT_ID", nothing),
-    workload_identity_client_id=get(ENV, "AZURE_CLIENT_ID", nothing),
-    workload_identity_tenant_id=get(ENV, "AZURE_TENANT_ID", nothing),
-    authority=nothing, process_timeout::Real=10, additionally_allowed_tenants=String[])
+function DefaultAzureCredential(;
+        exclude_environment_credential::Bool = false,
+        exclude_workload_identity_credential::Bool = false,
+        exclude_managed_identity_credential::Bool = false,
+        exclude_cli_credential::Bool = false,
+        exclude_developer_cli_credential::Bool = false,
+        exclude_powershell_credential::Bool = true,
+        exclude_shared_token_cache_credential::Bool = true,
+        exclude_visual_studio_code_credential::Bool = true,
+        exclude_interactive_browser_credential::Bool = true,
+        managed_identity_client_id = get(ENV, "AZURE_CLIENT_ID", nothing),
+        workload_identity_client_id = get(ENV, "AZURE_CLIENT_ID", nothing),
+        workload_identity_tenant_id = get(ENV, "AZURE_TENANT_ID", nothing),
+        authority = nothing, process_timeout::Real = 10, additionally_allowed_tenants = String[]
+    )
     selection = lowercase(strip(get(ENV, "AZURE_TOKEN_CREDENTIALS", "")))
     dev_ok = selection in ("", "dev")
     prod_ok = selection in ("", "prod")
     only = selection in ("", "dev", "prod") ? nothing : selection
     use(name, is_prod, excluded) = only === nothing ? (!excluded && (is_prod ? prod_ok : dev_ok)) : only == lowercase(name)
-    if only !== nothing && !(only in ("environmentcredential", "workloadidentitycredential", "managedidentitycredential",
-        "azureclicredential", "azuredeveloperclicredential"))
+    if only !== nothing && !(
+            only in (
+                "environmentcredential", "workloadidentitycredential", "managedidentitycredential",
+                "azureclicredential", "azuredeveloperclicredential",
+            )
+        )
         throw(ArgumentError("Invalid value for AZURE_TOKEN_CREDENTIALS: $(get(ENV, "AZURE_TOKEN_CREDENTIALS", ""))"))
     end
     creds = TokenCredential[]
@@ -157,13 +181,17 @@ function DefaultAzureCredential(; exclude_environment_credential::Bool=false,
     if use("WorkloadIdentityCredential", true, exclude_workload_identity_credential)
         file = get(ENV, "AZURE_FEDERATED_TOKEN_FILE", "")
         if !isempty(file) && workload_identity_client_id !== nothing && workload_identity_tenant_id !== nothing
-            push!(creds, WorkloadIdentityCredential(tenant_id=workload_identity_tenant_id,
-                client_id=workload_identity_client_id, token_file_path=file, authority=authority,
-                additionally_allowed_tenants=additionally_allowed_tenants))
+            push!(
+                creds, WorkloadIdentityCredential(
+                    tenant_id = workload_identity_tenant_id,
+                    client_id = workload_identity_client_id, token_file_path = file, authority = authority,
+                    additionally_allowed_tenants = additionally_allowed_tenants
+                )
+            )
         end
     end
     if use("ManagedIdentityCredential", true, exclude_managed_identity_credential)
-        push!(creds, ManagedIdentityCredential(client_id=managed_identity_client_id, _within_dac=only === nothing))
+        push!(creds, ManagedIdentityCredential(client_id = managed_identity_client_id, _within_dac = only === nothing))
     end
     use("AzureCliCredential", false, exclude_cli_credential) &&
         push!(creds, AzureCliCredential(; process_timeout, additionally_allowed_tenants))
@@ -187,8 +215,12 @@ function AzureCore.get_token_info(c::DefaultAzureCredentialType, scopes::Abstrac
         return get_token_info(c.chain, scopes...; kwargs...)
     catch err
         if err isa ClientAuthenticationError
-            throw(ClientAuthenticationError(replace(err.message, "ChainedTokenCredential" => "DefaultAzureCredential");
-                error=err.error))
+            throw(
+                ClientAuthenticationError(
+                    replace(err.message, "ChainedTokenCredential" => "DefaultAzureCredential");
+                    error = err.error
+                )
+            )
         end
         rethrow()
     end

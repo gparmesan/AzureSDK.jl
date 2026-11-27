@@ -23,21 +23,27 @@ See also [`from_connection_string`](@ref).
 mutable struct EventHubProducerClient <: EventHubClient
     config::ClientConfig
     eventhub_name::String
-    conn::Union{Nothing,ClientConnection}
+    conn::Union{Nothing, ClientConnection}
     lock::ReentrantLock
-    senders::Dict{String,Tuple{AMQP.SenderLink,Int}}
+    senders::Dict{String, Tuple{AMQP.SenderLink, Int}}
     mgmt::Ref{Any}
     mgmt_lock::ReentrantLock
     closed::Bool
 end
 
-function EventHubProducerClient(fully_qualified_namespace::AbstractString, eventhub_name::AbstractString, credential;
-    use_development_emulator::Bool=false, kwargs...)
-    cfg = ClientConfig(fully_qualified_namespace, credential, EVENTHUBS_SCOPE, "eventhub";
-        use_development_emulator=use_development_emulator, kwargs...)
+function EventHubProducerClient(
+        fully_qualified_namespace::AbstractString, eventhub_name::AbstractString, credential;
+        use_development_emulator::Bool = false, kwargs...
+    )
+    cfg = ClientConfig(
+        fully_qualified_namespace, credential, EVENTHUBS_SCOPE, "eventhub";
+        use_development_emulator = use_development_emulator, kwargs...
+    )
     conn = cfg.transport_type == TransportType.Http ? nothing : Messaging.make_connection(cfg)
-    return EventHubProducerClient(cfg, _check_hub_name(eventhub_name), conn, ReentrantLock(),
-        Dict{String,Tuple{AMQP.SenderLink,Int}}(), Ref{Any}(nothing), ReentrantLock(), false)
+    return EventHubProducerClient(
+        cfg, _check_hub_name(eventhub_name), conn, ReentrantLock(),
+        Dict{String, Tuple{AMQP.SenderLink, Int}}(), Ref{Any}(nothing), ReentrantLock(), false
+    )
 end
 
 function EventHubProducerClient(f::Function, args...; kwargs...)
@@ -56,10 +62,10 @@ end
 Create a client from an Event Hubs connection string. Connection strings for
 the local development emulator (`UseDevelopmentEmulator=true`) are supported.
 """
-function from_connection_string(::Type{EventHubProducerClient}, conn_str::AbstractString; eventhub_name=nothing, kwargs...)
+function from_connection_string(::Type{EventHubProducerClient}, conn_str::AbstractString; eventhub_name = nothing, kwargs...)
     p, name, cred = _from_connection_string_args(conn_str, eventhub_name)
     host = p.port === nothing ? p.fully_qualified_namespace : "$(p.fully_qualified_namespace):$(p.port)"
-    return EventHubProducerClient(host, name, cred; use_development_emulator=p.use_development_emulator, kwargs...)
+    return EventHubProducerClient(host, name, cred; use_development_emulator = p.use_development_emulator, kwargs...)
 end
 function from_connection_string(f::Function, T::Type{EventHubProducerClient}, conn_str::AbstractString; kwargs...)
     client = from_connection_string(T, conn_str; kwargs...)
@@ -71,8 +77,10 @@ function from_connection_string(f::Function, T::Type{EventHubProducerClient}, co
 end
 
 function Base.show(io::IO, p::EventHubProducerClient)
-    print(io, "EventHubProducerClient(", p.config.fully_qualified_namespace, "/", p.eventhub_name, ", ",
-        p.config.transport_type, p.closed ? ", closed" : "", ")")
+    return print(
+        io, "EventHubProducerClient(", p.config.fully_qualified_namespace, "/", p.eventhub_name, ", ",
+        p.config.transport_type, p.closed ? ", closed" : "", ")"
+    )
 end
 
 
@@ -91,8 +99,10 @@ function _get_sender(p::EventHubProducerClient, partition_id)
         if cached !== nothing && cached[2] == gen && AMQP.is_attached(cached[1])
             return cached[1]
         end
-        link = AMQP.attach_sender(session, "EHProducer-$(uuid4())", target;
-            snd_settle_mode=AMQP.SND_UNSETTLED, rcv_settle_mode=AMQP.RCV_FIRST, timeout=p.config.auth_timeout)
+        link = AMQP.attach_sender(
+            session, "EHProducer-$(uuid4())", target;
+            snd_settle_mode = AMQP.SND_UNSETTLED, rcv_settle_mode = AMQP.RCV_FIRST, timeout = p.config.auth_timeout
+        )
         p.senders[target] = (link, gen)
         return link
     finally
@@ -106,8 +116,10 @@ end
 Create an empty batch bounded by the maximum message size the service allows
 on the link (Python: `EventHubProducerClient.create_batch`).
 """
-function create_batch(p::EventHubProducerClient; partition_id=nothing, partition_key=nothing,
-    max_size_in_bytes::Union{Nothing,Integer}=nothing)
+function create_batch(
+        p::EventHubProducerClient; partition_id = nothing, partition_key = nothing,
+        max_size_in_bytes::Union{Nothing, Integer} = nothing
+    )
     _check_open(p)
     limit = if p.config.transport_type == TransportType.Http
         1024 * 1024
@@ -116,11 +128,14 @@ function create_batch(p::EventHubProducerClient; partition_id=nothing, partition
         link.max_message_size > 0 ? Int(link.max_message_size) : 1024 * 1024
     end
     if max_size_in_bytes !== nothing
-        max_size_in_bytes > limit && throw(ArgumentError(
-            "Max message size: $(max_size_in_bytes) is too large, acceptable max batch size is: $(limit) bytes."))
+        max_size_in_bytes > limit && throw(
+            ArgumentError(
+                "Max message size: $(max_size_in_bytes) is too large, acceptable max batch size is: $(limit) bytes."
+            )
+        )
         limit = Int(max_size_in_bytes)
     end
-    return EventDataBatch(max_size_in_bytes=limit, partition_id=partition_id, partition_key=partition_key)
+    return EventDataBatch(max_size_in_bytes = limit, partition_id = partition_id, partition_key = partition_key)
 end
 
 function _outcome_error(outcome)
@@ -142,16 +157,18 @@ end
 Send a batch of events. A vector of events is packed into a single batch
 (throws `EventDataSendError` if it does not fit).
 """
-function send_batch(p::EventHubProducerClient, batch::EventDataBatch; timeout::Union{Nothing,Real}=nothing)
+function send_batch(p::EventHubProducerClient, batch::EventDataBatch; timeout::Union{Nothing, Real} = nothing)
     isempty(batch) && return nothing
     if p.config.transport_type == TransportType.Http
-        return _http_send_batch(p, batch; timeout=timeout)
+        return _http_send_batch(p, batch; timeout = timeout)
     end
     payload = batch_payload(batch)
-    _run(p, "send_batch"; timeout=timeout) do
+    _run(p, "send_batch"; timeout = timeout) do
         link = _get_sender(p, batch.partition_id)
-        outcome = AMQP.send_transfer(link, payload; message_format=UInt32(AMQP.BATCH_MESSAGE_FORMAT),
-            timeout=something(timeout, 60.0))
+        outcome = AMQP.send_transfer(
+            link, payload; message_format = UInt32(AMQP.BATCH_MESSAGE_FORMAT),
+            timeout = something(timeout, 60.0)
+        )
         err = _outcome_error(outcome)
         err === nothing || throw(err)
         nothing
@@ -159,15 +176,20 @@ function send_batch(p::EventHubProducerClient, batch::EventDataBatch; timeout::U
     return nothing
 end
 
-function send_batch(p::EventHubProducerClient, events::AbstractVector{<:Union{EventData,AMQPMessage}}; partition_id=nothing,
-    partition_key=nothing, timeout::Union{Nothing,Real}=nothing)
+function send_batch(
+        p::EventHubProducerClient, events::AbstractVector{<:Union{EventData, AMQPMessage}}; partition_id = nothing,
+        partition_key = nothing, timeout::Union{Nothing, Real} = nothing
+    )
     isempty(events) && return nothing
-    batch = create_batch(p; partition_id=partition_id, partition_key=partition_key)
+    batch = create_batch(p; partition_id = partition_id, partition_key = partition_key)
     for e in events
-        try_add!(batch, e) || throw(EventDataSendError(
-            "The list of events is too large to fit into one batch (max $(batch.max_size_in_bytes) bytes); use create_batch and send several batches."))
+        try_add!(batch, e) || throw(
+            EventDataSendError(
+                "The list of events is too large to fit into one batch (max $(batch.max_size_in_bytes) bytes); use create_batch and send several batches."
+            )
+        )
     end
-    return send_batch(p, batch; timeout=timeout)
+    return send_batch(p, batch; timeout = timeout)
 end
 
 """
@@ -175,9 +197,11 @@ end
 
 Send a single event.
 """
-function send_event(p::EventHubProducerClient, event::Union{EventData,AMQPMessage}; partition_id=nothing, partition_key=nothing,
-    timeout::Union{Nothing,Real}=nothing)
-    return send_batch(p, [event]; partition_id=partition_id, partition_key=partition_key, timeout=timeout)
+function send_event(
+        p::EventHubProducerClient, event::Union{EventData, AMQPMessage}; partition_id = nothing, partition_key = nothing,
+        timeout::Union{Nothing, Real} = nothing
+    )
+    return send_batch(p, [event]; partition_id = partition_id, partition_key = partition_key, timeout = timeout)
 end
 
 """
@@ -200,27 +224,29 @@ Base.isopen(p::EventHubProducerClient) = !p.closed
 # HTTP (REST) transport
 # ---------------------------------------------------------------------------
 
-function _http_send_batch(p::EventHubProducerClient, batch::EventDataBatch; timeout=nothing)
+function _http_send_batch(p::EventHubProducerClient, batch::EventDataBatch; timeout = nothing)
     cfg = p.config
     path = batch.partition_id === nothing ? "$(p.eventhub_name)/messages" :
-           "$(p.eventhub_name)/partitions/$(URIs.escapeuri(batch.partition_id))/messages"
+        "$(p.eventhub_name)/partitions/$(URIs.escapeuri(batch.partition_id))/messages"
     url = string(Messaging.https_base(cfg), "/", path, "?api-version=2014-01&timeout=60")
     events = [AMQP.decode_message(m) for m in batch.messages]
     all_text = all(m -> m.body_type === :data && isvalid(String(copy(AMQP.body_bytes(m)))), events)
-    _run(p, "send_batch"; timeout=timeout) do
+    _run(p, "send_batch"; timeout = timeout) do
         auth = Messaging.http_authorization(cfg, Messaging.resource_uri(cfg, p.eventhub_name))
         if all_text && length(events) > 1
             items = map(events) do m
-                d = Dict{String,Any}("Body" => String(copy(AMQP.body_bytes(m))))
+                d = Dict{String, Any}("Body" => String(copy(AMQP.body_bytes(m))))
                 m.application_properties === nothing || (d["UserProperties"] = _http_props(m.application_properties))
                 batch.partition_key === nothing || (d["BrokerProperties"] = Dict("PartitionKey" => batch.partition_key))
                 d
             end
-            _http_post(url, auth, "application/vnd.microsoft.servicebus.json", JSON.json(items), cfg,
-                Pair{String,String}[])
+            _http_post(
+                url, auth, "application/vnd.microsoft.servicebus.json", JSON.json(items), cfg,
+                Pair{String, String}[]
+            )
         else
             for m in events
-                headers = Pair{String,String}[]
+                headers = Pair{String, String}[]
                 batch.partition_key === nothing ||
                     push!(headers, "BrokerProperties" => JSON.json(Dict("PartitionKey" => batch.partition_key)))
                 if m.application_properties !== nothing
@@ -229,7 +255,7 @@ function _http_send_batch(p::EventHubProducerClient, batch::EventDataBatch; time
                     end
                 end
                 ct = m.properties === nothing || m.properties.content_type === nothing ?
-                     "application/atom+xml;type=entry;charset=utf-8" : string(m.properties.content_type)
+                    "application/atom+xml;type=entry;charset=utf-8" : string(m.properties.content_type)
                 _http_post(url, auth, ct, AMQP.body_bytes(m), cfg, headers)
             end
         end
@@ -243,18 +269,24 @@ function _http_header_name(k::AbstractString)
     return String(k)
 end
 
-_http_props(d::AbstractDict) = Dict{String,Any}(k => (v isa Dates.DateTime ? string(v, "Z") : v) for (k, v) in d)
+_http_props(d::AbstractDict) = Dict{String, Any}(k => (v isa Dates.DateTime ? string(v, "Z") : v) for (k, v) in d)
 
 function _http_post(url, auth, content_type, body, cfg::ClientConfig, extra_headers)
-    headers = vcat(Pair{String,String}["Authorization" => auth, "Content-Type" => content_type,
-            "User-Agent" => cfg.user_agent], extra_headers)
-    resp = AzureCore.send_request("POST", url; headers=headers, body=body, retry=RetryOptions(retry_total=0),
-        timeout=60.0, client=cfg.http_client)
+    headers = vcat(
+        Pair{String, String}[
+            "Authorization" => auth, "Content-Type" => content_type,
+            "User-Agent" => cfg.user_agent,
+        ], extra_headers
+    )
+    resp = AzureCore.send_request(
+        "POST", url; headers = headers, body = body, retry = RetryOptions(retry_total = 0),
+        timeout = 60.0, client = cfg.http_client
+    )
     resp.status in (200, 201) && return resp
     cond = resp.status == 401 || resp.status == 403 ? Symbol("amqp:unauthorized-access") :
-           resp.status == 404 ? Symbol("amqp:not-found") :
-           resp.status == 413 ? Symbol("amqp:link:message-size-exceeded") :
-           resp.status in (429, 503) ? Symbol("com.microsoft:server-busy") :
-           resp.status in (500, 502, 504) ? Symbol("amqp:internal-error") : Symbol("com.microsoft:argument-error")
+        resp.status == 404 ? Symbol("amqp:not-found") :
+        resp.status == 413 ? Symbol("amqp:link:message-size-exceeded") :
+        resp.status in (429, 503) ? Symbol("com.microsoft:server-busy") :
+        resp.status in (500, 502, 504) ? Symbol("amqp:internal-error") : Symbol("com.microsoft:argument-error")
     throw(AMQPException(:link, cond, "HTTP $(resp.status) from $(AzureCore.redact_url(url))"))
 end

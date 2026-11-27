@@ -10,42 +10,48 @@ used to authorize an audience on a connection through `\$cbs`. `expires_on`
 is a Unix timestamp in seconds. `token_type` is `"jwt"` for Entra ID tokens or
 `"servicebus.windows.net:sastoken"` for shared access signatures.
 """
-const TokenProvider = Union{Nothing,Function}
+const TokenProvider = Union{Nothing, Function}
 
 mutable struct ClientConnection
     transport_config::TransportConfig
     hostname::String
     sasl_mechanism::Symbol
-    sasl_username::Union{Nothing,String}
-    sasl_password::Union{Nothing,String}
-    properties::Dict{Symbol,Any}
+    sasl_username::Union{Nothing, String}
+    sasl_password::Union{Nothing, String}
+    properties::Dict{Symbol, Any}
     idle_timeout::Float64
     token_provider::TokenProvider
     operation_timeout::Float64
     lock::ReentrantLock
     cond::Threads.Condition
-    conn::Union{Nothing,Connection}
-    session::Union{Nothing,Session}
-    cbs::Union{Nothing,ManagementLink}
-    authorized::Dict{String,Float64}    # audience => refresh at (unix seconds)
-    refresher::Union{Nothing,Task}
+    conn::Union{Nothing, Connection}
+    session::Union{Nothing, Session}
+    cbs::Union{Nothing, ManagementLink}
+    authorized::Dict{String, Float64}    # audience => refresh at (unix seconds)
+    refresher::Union{Nothing, Task}
     closed::Bool
     generation::Int
 end
 
-function ClientConnection(tc::TransportConfig; hostname::AbstractString=tc.host,
-    sasl_mechanism::Symbol=:anonymous, sasl_username=nothing, sasl_password=nothing,
-    properties::Dict{Symbol,Any}=Dict{Symbol,Any}(), idle_timeout::Real=0.0,
-    token_provider::TokenProvider=nothing, operation_timeout::Real=60.0)
+function ClientConnection(
+        tc::TransportConfig; hostname::AbstractString = tc.host,
+        sasl_mechanism::Symbol = :anonymous, sasl_username = nothing, sasl_password = nothing,
+        properties::Dict{Symbol, Any} = Dict{Symbol, Any}(), idle_timeout::Real = 0.0,
+        token_provider::TokenProvider = nothing, operation_timeout::Real = 60.0
+    )
     lk = ReentrantLock()
-    return ClientConnection(tc, String(hostname), sasl_mechanism, sasl_username, sasl_password, properties,
+    return ClientConnection(
+        tc, String(hostname), sasl_mechanism, sasl_username, sasl_password, properties,
         Float64(idle_timeout), token_provider, Float64(operation_timeout), lk, Threads.Condition(lk), nothing, nothing,
-        nothing, Dict{String,Float64}(), nothing, false, 0)
+        nothing, Dict{String, Float64}(), nothing, false, 0
+    )
 end
 
 function Base.show(io::IO, cc::ClientConnection)
-    print(io, "ClientConnection(", cc.hostname, ", ", cc.transport_config.scheme, ", generation=", cc.generation,
-        cc.closed ? ", closed" : "", ")")
+    return print(
+        io, "ClientConnection(", cc.hostname, ", ", cc.transport_config.scheme, ", generation=", cc.generation,
+        cc.closed ? ", closed" : "", ")"
+    )
 end
 
 struct ClientClosedError <: Exception
@@ -75,16 +81,22 @@ function acquire!(cc::ClientConnection)
             old = cc.conn
             cc.conn = nothing
             cc.session = nothing
-            @async try close(old; timeout=1.0) catch end
+            @async try
+                close(old; timeout = 1.0)
+            catch end
         end
-        cfg = ConnectionConfig(hostname=cc.hostname, sasl_mechanism=cc.sasl_mechanism,
-            sasl_username=cc.sasl_username, sasl_password=cc.sasl_password,
-            properties=cc.properties, idle_timeout=cc.idle_timeout, open_timeout=cc.operation_timeout)
+        cfg = ConnectionConfig(
+            hostname = cc.hostname, sasl_mechanism = cc.sasl_mechanism,
+            sasl_username = cc.sasl_username, sasl_password = cc.sasl_password,
+            properties = cc.properties, idle_timeout = cc.idle_timeout, open_timeout = cc.operation_timeout
+        )
         conn = connect(cc.transport_config, cfg)
         session = try
-            begin_session(conn; timeout=cc.operation_timeout)
+            begin_session(conn; timeout = cc.operation_timeout)
         catch
-            try close(conn; timeout=1.0) catch end
+            try
+                close(conn; timeout = 1.0)
+            catch end
             rethrow()
         end
         cc.conn = conn
@@ -98,7 +110,7 @@ function acquire!(cc::ClientConnection)
     end
 end
 
-_refresh_at(expires_on::Float64, now::Float64=time()) =
+_refresh_at(expires_on::Float64, now::Float64 = time()) =
     now + max(0.5 * (expires_on - now), (expires_on - now) - 300.0, 1.0)
 
 """
@@ -123,10 +135,10 @@ end
 
 function _put_token_locked!(cc::ClientConnection, session::Session, audience::String)
     if cc.cbs === nothing || !is_open(cc.cbs)
-        cc.cbs = open_management_link(session, "\$cbs"; timeout=cc.operation_timeout, reply_to="cbs")
+        cc.cbs = open_management_link(session, "\$cbs"; timeout = cc.operation_timeout, reply_to = "cbs")
     end
     token, token_type, expires_on = cc.token_provider(audience)
-    put_token(cc.cbs, audience, token; token_type=token_type, expires_on=expires_on, timeout=cc.operation_timeout)
+    put_token(cc.cbs, audience, token; token_type = token_type, expires_on = expires_on, timeout = cc.operation_timeout)
     cc.authorized[audience] = _refresh_at(Float64(expires_on))
     return nothing
 end
@@ -164,13 +176,14 @@ function _refresh_loop(cc::ClientConnection)
             unlock(cc.lock)
         end
     end
+    return
 end
 
 "Management link to `address` on the current connection (cached per generation by callers)."
-function open_management(cc::ClientConnection, address::AbstractString; audience::Union{Nothing,AbstractString}=nothing)
+function open_management(cc::ClientConnection, address::AbstractString; audience::Union{Nothing, AbstractString} = nothing)
     audience === nothing || authorize!(cc, audience)
     _, session, gen = acquire!(cc)
-    return open_management_link(session, address; timeout=cc.operation_timeout), gen
+    return open_management_link(session, address; timeout = cc.operation_timeout), gen
 end
 
 function Base.close(cc::ClientConnection)
@@ -185,7 +198,9 @@ function Base.close(cc::ClientConnection)
         empty!(cc.authorized)
         c
     end
-    conn === nothing || try close(conn; timeout=5.0) catch end
+    conn === nothing || try
+        close(conn; timeout = 5.0)
+    catch end
     return nothing
 end
 

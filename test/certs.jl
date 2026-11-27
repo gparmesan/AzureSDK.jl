@@ -8,7 +8,7 @@ const lib = OpenSSL_jll.libcrypto
 
 check(x, what) = (x == C_NULL || x == 0) ? error("OpenSSL call failed: $what") : x
 
-function rsa_key(bits=2048)
+function rsa_key(bits = 2048)
     ctx = check(ccall((:EVP_PKEY_CTX_new_id, lib), Ptr{Cvoid}, (Cint, Ptr{Cvoid}), 6, C_NULL), "ctx")
     try
         check(ccall((:EVP_PKEY_keygen_init, lib), Cint, (Ptr{Cvoid},), ctx) == 1 ? 1 : 0, "keygen_init")
@@ -43,25 +43,35 @@ Create an RSA key and a self-signed certificate (with SAN DNS:localhost,
 IP:127.0.0.1). With `password`, the PEM key is encrypted and the PKCS#12
 blob protected with it.
 """
-function self_signed(cn::AbstractString="localhost"; days::Integer=1, password=nothing)
+function self_signed(cn::AbstractString = "localhost"; days::Integer = 1, password = nothing)
     pkey = rsa_key()
     x = check(ccall((:X509_new, lib), Ptr{Cvoid}, ()), "X509_new")
     try
         ccall((:X509_set_version, lib), Cint, (Ptr{Cvoid}, Clong), x, 2)
         serial = ccall((:X509_get_serialNumber, lib), Ptr{Cvoid}, (Ptr{Cvoid},), x)
         ccall((:ASN1_INTEGER_set, lib), Cint, (Ptr{Cvoid}, Clong), serial, rand(1:typemax(Int32)))
-        ccall((:X509_gmtime_adj, lib), Ptr{Cvoid}, (Ptr{Cvoid}, Clong),
-            ccall((:X509_getm_notBefore, lib), Ptr{Cvoid}, (Ptr{Cvoid},), x), -3600)
-        ccall((:X509_gmtime_adj, lib), Ptr{Cvoid}, (Ptr{Cvoid}, Clong),
-            ccall((:X509_getm_notAfter, lib), Ptr{Cvoid}, (Ptr{Cvoid},), x), days * 86400)
+        ccall(
+            (:X509_gmtime_adj, lib), Ptr{Cvoid}, (Ptr{Cvoid}, Clong),
+            ccall((:X509_getm_notBefore, lib), Ptr{Cvoid}, (Ptr{Cvoid},), x), -3600
+        )
+        ccall(
+            (:X509_gmtime_adj, lib), Ptr{Cvoid}, (Ptr{Cvoid}, Clong),
+            ccall((:X509_getm_notAfter, lib), Ptr{Cvoid}, (Ptr{Cvoid},), x), days * 86400
+        )
         ccall((:X509_set_pubkey, lib), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), x, pkey)
         name = ccall((:X509_get_subject_name, lib), Ptr{Cvoid}, (Ptr{Cvoid},), x)
-        ccall((:X509_NAME_add_entry_by_txt, lib), Cint, (Ptr{Cvoid}, Cstring, Cint, Cstring, Cint, Cint, Cint),
-            name, "CN", 0x1001, cn, -1, -1, 0)
+        ccall(
+            (:X509_NAME_add_entry_by_txt, lib), Cint, (Ptr{Cvoid}, Cstring, Cint, Cstring, Cint, Cint, Cint),
+            name, "CN", 0x1001, cn, -1, -1, 0
+        )
         ccall((:X509_set_issuer_name, lib), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), x, name)
         for (nid, value) in ((85, "DNS:$(cn),IP:127.0.0.1"), (87, "critical,CA:TRUE"))
-            ext = check(ccall((:X509V3_EXT_conf_nid, lib), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}, Cint, Cstring),
-                C_NULL, C_NULL, nid, value), "ext")
+            ext = check(
+                ccall(
+                    (:X509V3_EXT_conf_nid, lib), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}, Cint, Cstring),
+                    C_NULL, C_NULL, nid, value
+                ), "ext"
+            )
             ccall((:X509_add_ext, lib), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Cint), x, ext, -1)
             ccall((:X509_EXTENSION_free, lib), Cvoid, (Ptr{Cvoid},), ext)
         end
@@ -75,21 +85,29 @@ function self_signed(cn::AbstractString="localhost"; days::Integer=1, password=n
 
         bio = new_mem_bio()
         if password === nothing
-            ccall((:PEM_write_bio_PrivateKey, lib), Cint,
+            ccall(
+                (:PEM_write_bio_PrivateKey, lib), Cint,
                 (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cint, Ptr{Cvoid}, Ptr{Cvoid}),
-                bio, pkey, C_NULL, C_NULL, 0, C_NULL, C_NULL)
+                bio, pkey, C_NULL, C_NULL, 0, C_NULL, C_NULL
+            )
         else
             cipher = ccall((:EVP_aes_256_cbc, lib), Ptr{Cvoid}, ())
-            ccall((:PEM_write_bio_PKCS8PrivateKey, lib), Cint,
+            ccall(
+                (:PEM_write_bio_PKCS8PrivateKey, lib), Cint,
                 (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cint, Ptr{Cvoid}, Cstring),
-                bio, pkey, cipher, C_NULL, 0, C_NULL, password)
+                bio, pkey, cipher, C_NULL, 0, C_NULL, password
+            )
         end
         key_pem = bio_string(bio)
         free_bio(bio)
 
-        p12 = check(ccall((:PKCS12_create, lib), Ptr{Cvoid},
+        p12 = check(
+            ccall(
+                (:PKCS12_create, lib), Ptr{Cvoid},
                 (Cstring, Cstring, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Cint, Cint, Cint, Cint, Cint),
-                something(password, ""), "test", pkey, x, C_NULL, 0, 0, 0, 0, 0), "PKCS12_create")
+                something(password, ""), "test", pkey, x, C_NULL, 0, 0, 0, 0, 0
+            ), "PKCS12_create"
+        )
         bio = new_mem_bio()
         ccall((:i2d_PKCS12_bio, lib), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), bio, p12)
         p12_der = bio_bytes(bio)

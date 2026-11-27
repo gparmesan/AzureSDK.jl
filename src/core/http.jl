@@ -20,7 +20,7 @@ function redact_url(url::AbstractString)
 end
 
 function _retry_after_seconds(resp)
-    for (name, scale) in (("retry-after-ms", 1e-3), ("x-ms-retry-after-ms", 1e-3), ("retry-after", 1.0))
+    for (name, scale) in (("retry-after-ms", 1.0e-3), ("x-ms-retry-after-ms", 1.0e-3), ("retry-after", 1.0))
         v = HTTP.header(resp, name, "")
         isempty(v) && continue
         n = tryparse(Float64, strip(v))
@@ -28,7 +28,7 @@ function _retry_after_seconds(resp)
         if scale == 1.0
             # HTTP-date
             try
-                dt = Dates.DateTime(strip(v)[1:end-4], Dates.dateformat"e, d u y H:M:S")
+                dt = Dates.DateTime(strip(v)[1:(end - 4)], Dates.dateformat"e, d u y H:M:S")
                 return max(0.0, Dates.value(dt - Dates.now(Dates.UTC)) / 1000)
             catch
             end
@@ -46,14 +46,18 @@ Send an HTTP request and return the final response (any status). Transient
 failures are retried according to `retry`. Connection failures after the last
 attempt raise [`ServiceRequestError`](@ref).
 """
-function send_request(method::AbstractString, url::AbstractString;
-    headers=Pair{String,String}[], body=nothing, retry::RetryOptions=RetryOptions(),
-    timeout::Real=30.0, connect_timeout::Real=min(timeout, 30.0),
-    retry_status_codes=RETRY_STATUS_CODES, retry_on_connection_error::Bool=true,
-    proxy=nothing, client=nothing, max_retry_after::Real=60.0)
+function send_request(
+        method::AbstractString, url::AbstractString;
+        headers = Pair{String, String}[], body = nothing, retry::RetryOptions = RetryOptions(),
+        timeout::Real = 30.0, connect_timeout::Real = min(timeout, 30.0),
+        retry_status_codes = RETRY_STATUS_CODES, retry_on_connection_error::Bool = true,
+        proxy = nothing, client = nothing, max_retry_after::Real = 60.0
+    )
     attempt = 0
-    kwargs = Dict{Symbol,Any}(:retry => false, :status_exception => false, :redirect => false,
-        :cookies => false, :connect_timeout => connect_timeout, :request_timeout => timeout)
+    kwargs = Dict{Symbol, Any}(
+        :retry => false, :status_exception => false, :redirect => false,
+        :cookies => false, :connect_timeout => connect_timeout, :request_timeout => timeout
+    )
     if client !== nothing
         kwargs[:client] = client        # carries TLS (custom CA) and proxy settings
     elseif proxy !== nothing
@@ -66,8 +70,12 @@ function send_request(method::AbstractString, url::AbstractString;
             err isa InterruptException && rethrow()
             attempt += 1
             if !retry_on_connection_error || attempt > retry.retry_total
-                throw(ServiceRequestError("$(method) $(redact_url(url)) failed: $(sprint(showerror, err; context=:compact=>true) |> _first_line)";
-                    error=err))
+                throw(
+                    ServiceRequestError(
+                        "$(method) $(redact_url(url)) failed: $(sprint(showerror, err; context = :compact => true) |> _first_line)";
+                        error = err
+                    )
+                )
             end
             sleep(backoff_delay(retry, attempt))
             continue
@@ -80,16 +88,19 @@ function send_request(method::AbstractString, url::AbstractString;
         end
         return resp
     end
+    return
 end
 
 _first_line(s::AbstractString) = first(split(s, '\n'))
 
-const _STATUS_TEXT = Dict(200 => "OK", 201 => "Created", 202 => "Accepted", 204 => "No Content",
+const _STATUS_TEXT = Dict(
+    200 => "OK", 201 => "Created", 202 => "Accepted", 204 => "No Content",
     206 => "Partial Content", 304 => "Not Modified", 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
     404 => "Not Found", 405 => "Method Not Allowed", 408 => "Request Timeout", 409 => "Conflict", 410 => "Gone",
     411 => "Length Required", 412 => "Precondition Failed", 413 => "Payload Too Large", 416 => "Range Not Satisfiable",
     429 => "Too Many Requests", 500 => "Internal Server Error", 501 => "Not Implemented", 502 => "Bad Gateway",
-    503 => "Service Unavailable", 504 => "Gateway Timeout")
+    503 => "Service Unavailable", 504 => "Gateway Timeout"
+)
 
 "Reason phrase of a response (from the response, or the standard text for its status)."
 function status_text(resp)
@@ -98,7 +109,7 @@ function status_text(resp)
 end
 
 "Raise the appropriate `AbstractHttpResponseError` for an unsuccessful response."
-function raise_for_status(resp; message::AbstractString="")
+function raise_for_status(resp; message::AbstractString = "")
     200 <= resp.status < 300 && return resp
     body = String(copy(resp.body))
     length(body) > 2048 && (body = body[1:prevind(body, 2048)] * "…")
@@ -108,7 +119,7 @@ function raise_for_status(resp; message::AbstractString="")
         resp.status == 409 ? ResourceExistsError :
         resp.status == 412 ? ResourceModifiedError :
         resp.status == 304 ? ResourceNotModifiedError : HttpResponseError
-    throw(T(msg; status_code=resp.status, reason=status_text(resp), response_body=body))
+    throw(T(msg; status_code = resp.status, reason = status_text(resp), response_body = body))
 end
 
 """
@@ -140,13 +151,13 @@ of a CA bundle) and `http_proxy`, or `nothing` when the defaults apply.
 function http_client(connection_verify, http_proxy)
     (connection_verify === true && http_proxy === nothing) && return nothing
     tls = if connection_verify isa AbstractString
-        Reseau.TLS.Config(ca_file=String(connection_verify))
+        Reseau.TLS.Config(ca_file = String(connection_verify))
     elseif connection_verify === false
-        Reseau.TLS.Config(verify_peer=false)
+        Reseau.TLS.Config(verify_peer = false)
     else
         nothing
     end
-    return HTTP.Client(transport=HTTP.Transport(tls_config=tls, proxy=proxy_config(http_proxy)))
+    return HTTP.Client(transport = HTTP.Transport(tls_config = tls, proxy = proxy_config(http_proxy)))
 end
 
 """
