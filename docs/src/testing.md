@@ -67,3 +67,20 @@ After cloning, run `sh scripts/configure-private-git.sh` to use a neutral
 commit identity, get a `git ci` alias that records UTC timestamps, and install
 a pre-commit hook that refuses changes containing your home directory path,
 e-mail address or host name.
+
+### Code style
+
+The code is formatted with [Runic](https://github.com/fredrikekre/Runic.jl),
+which has no options; CI fails on unformatted files. Install it once in a
+shared environment and run it before committing:
+
+```sh
+julia --project=@runic -e 'using Pkg; Pkg.add("Runic")'
+julia --project=@runic -m Runic --inplace .
+```
+
+Commits that only reformat code are listed in `.git-blame-ignore-revs`, so
+GitHub's blame view skips them. For local `git blame`, run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs` once.
+
+Add user-visible changes to `NEWS.md` in the repository root.

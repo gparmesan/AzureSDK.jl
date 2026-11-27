@@ -1,0 +1,5 @@
+# Commits that only reformat code; GitHub's blame view skips them.
+# Locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format all Julia code with Runic
+360568d89d8ba5797b2e061e26e521e2274cef8e

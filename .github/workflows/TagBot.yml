@@ -1,0 +1,36 @@
+# Creates a git tag and GitHub release for each new version registered in the
+# General registry. Does nothing until the package is registered.
+name: TagBot
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      lookback:
+        default: "3"
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  deployments: read
+  issues: read
+  discussions: read
+  packages: read
+  pages: read
+  pull-requests: read
+  repository-projects: read
+  security-events: read
+  statuses: read
+
+jobs:
+  TagBot:
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'JuliaTagBot'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: JuliaRegistries/TagBot@a761b867f05e7e410011ab16b244f2fffec16c85 # v1.26.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Deploy key, so that the new tag also triggers the documentation build.
+          ssh: ${{ secrets.DOCUMENTER_KEY }}
