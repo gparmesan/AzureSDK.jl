@@ -3,3 +3,6 @@
 
 # Format all Julia code with Runic
 360568d89d8ba5797b2e061e26e521e2274cef8e
+
+# Format Markdown, YAML and JSON files with Prettier
+085d84f6e51b6f10307dd4ef70374c4fe9d4a0f6

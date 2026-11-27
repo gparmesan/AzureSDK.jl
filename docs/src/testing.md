@@ -79,6 +79,11 @@ julia --project=@runic -e 'using Pkg; Pkg.add("Runic")'
 julia --project=@runic -m Runic --inplace .
 ```
 
+Markdown, YAML and JSON files are formatted with
+[Prettier](https://prettier.io) (`prettier --write .`; not checked in CI).
+Files with Documenter admonitions (`!!! note`) are listed in `.prettierignore`,
+since Prettier would break them.
+
 Commits that only reformat code are listed in `.git-blame-ignore-revs`, so
 GitHub's blame view skips them. For local `git blame`, run
 `git config blame.ignoreRevsFile .git-blame-ignore-revs` once.

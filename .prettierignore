@@ -1,0 +1,4 @@
+# Documenter admonitions (`!!! note` with an indented body) are not CommonMark;
+# prettier would unindent the body and break them. Documenter also renders
+# <!-- prettier-ignore --> comments as text, so exclude such files here.
+docs/src/index.md
