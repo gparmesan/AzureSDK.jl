@@ -80,6 +80,30 @@ function Base.show(io::IO, p::ConnectionStringProperties)
         p.use_development_emulator ? ", use_development_emulator=true" : "", ")")
 end
 
+# The Event Hubs / Service Bus emulators' publicly documented key (not a secret).
+const EMULATOR_SAS_KEY = "SAS_KEY_VALUE"
+const _PLAINTEXT_KEY_MSG = "the development emulator is reached without TLS: on a host other than a loopback \
+    host (e.g. a docker-compose service name) only the emulator's public key (SharedAccessKey=$(EMULATOR_SAS_KEY)) \
+    may be used"
+
+"""
+    plaintext_credential_ok(host, credential) -> Bool
+
+Whether `credential` may be used over an unencrypted connection to `host`:
+anything on a loopback host, elsewhere (single-label emulator host names, which
+may resolve through the DNS search domain to any machine) only the emulators'
+public key, so a real key or token is never sent in clear text.
+"""
+plaintext_credential_ok(host::AbstractString, credential) =
+    AzureCore.is_local_host(host) ||
+    credential isa AzureNamedKeyCredential && named_key(credential).key == EMULATOR_SAS_KEY
+
+function _check_plaintext_credential(cfg)
+    cfg.use_emulator && !plaintext_credential_ok(cfg.fully_qualified_namespace, cfg.credential) &&
+        throw(ArgumentError(_PLAINTEXT_KEY_MSG))
+    return nothing
+end
+
 function parse_messaging_connection_string(conn_str::AbstractString)
     d = parse_connection_string_pairs(conn_str)
     endpoint = get(d, "endpoint", nothing)
@@ -99,6 +123,9 @@ function parse_messaging_connection_string(conn_str::AbstractString)
     emulator = lowercase(get(d, "usedevelopmentemulator", "false")) == "true"
     if emulator && !AzureCore.is_dev_host(u.host)
         throw(ArgumentError("UseDevelopmentEmulator may only be used with a local endpoint"))
+    end
+    if emulator && !AzureCore.is_local_host(u.host) && (sas !== nothing || key != EMULATOR_SAS_KEY)
+        throw(ArgumentError(_PLAINTEXT_KEY_MSG))
     end
     entity = get(d, "entitypath", nothing)
     return ConnectionStringProperties(u.host, string("sb://", u.host, isempty(u.port) ? "" : ":" * u.port, "/"),
@@ -214,9 +241,11 @@ function ClientConfig(fully_qualified_namespace::AbstractString, credential, sco
         # The emulator is reached over unencrypted AMQP/HTTP.
         AzureCore.is_dev_host(host) ||
             throw(ArgumentError("use_development_emulator may only be used with a local endpoint"))
-        credential isa TokenCredential && !AzureCore.is_local_host(host) &&
-            throw(ArgumentError("token credentials may only be sent unencrypted to a loopback host"))
+        plaintext_credential_ok(host, credential) || throw(ArgumentError(_PLAINTEXT_KEY_MSG))
     end
+    # private test hook: only the in-process loopback peer, never a plaintext network transport
+    _scheme === nothing || Symbol(_scheme) === :loopback ||
+        throw(ArgumentError("_scheme only accepts :loopback"))
     use_development_emulator && tt == TransportType.AmqpOverWebsocket &&
         throw(ArgumentError("the development emulator does not support AMQP over WebSockets"))
     http_proxy !== nothing && tt == TransportType.Amqp &&
@@ -250,8 +279,21 @@ function make_connection(cfg::ClientConfig)
     props = Dict{Symbol,Any}(:product => "azsdk-julia-$(cfg.component)", :version => AzureCore.PACKAGE_VERSION,
         :framework => "Julia/$(VERSION)", Symbol("user-agent") => cfg.user_agent)
     return ClientConnection(tc; hostname=cfg.fully_qualified_namespace, sasl_mechanism=:anonymous,
-        properties=props, token_provider=token_provider(cfg.credential, cfg.scope),
+        properties=props, token_provider=_checked_token_provider(cfg),
         operation_timeout=cfg.auth_timeout)
+end
+
+function _checked_token_provider(cfg::ClientConfig)
+    provider = token_provider(cfg.credential, cfg.scope)
+    cfg.use_emulator || return provider
+    # re-check on every token: the credential may have been rotated with update!
+    return audience -> (_check_plaintext_credential(cfg); provider(audience))
+end
+
+"`Authorization` header value for a client; refuses a real key on an unencrypted emulator connection."
+function http_authorization(cfg::ClientConfig, audience::AbstractString, scope::AbstractString=cfg.scope)
+    _check_plaintext_credential(cfg)      # the credential may have been rotated since the client was created
+    return http_authorization(cfg.credential, audience, scope)
 end
 
 "`sb://host/path` resource URI used as CBS audience and SAS resource."

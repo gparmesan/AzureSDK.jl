@@ -168,7 +168,9 @@ end
 
 True for hosts where a local emulator may run: loopback hosts (see
 [`is_local_host`](@ref)) and single-label names such as docker-compose service
-names (`azurite`). Plain connections to these are acceptable with emulator
-keys, but never with Entra ID tokens, which only `is_local_host` permits.
+names (`azurite`). Such names may resolve through the DNS search domain to
+any machine, so over plain connections they only get the emulators' public
+keys (or no credential); real keys, SAS tokens and Entra ID tokens go
+unencrypted only to hosts accepted by `is_local_host`.
 """
 is_dev_host(host::AbstractString) = is_local_host(host) || occursin(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", lowercase(host))

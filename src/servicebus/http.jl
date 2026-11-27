@@ -20,7 +20,7 @@ function _http_url(h::ServiceBusHandler, suffix::AbstractString; timeout=nothing
     return string(Messaging.https_base(h.client.config), "/", h.entity_path, suffix, "?", q)
 end
 
-_http_auth(h::ServiceBusHandler) = Messaging.http_authorization(h.client.config.credential, _audience(h), SERVICEBUS_SCOPE)
+_http_auth(h::ServiceBusHandler) = Messaging.http_authorization(h.client.config, _audience(h), SERVICEBUS_SCOPE)
 
 function _http_do(h::ServiceBusHandler, method::AbstractString, url::AbstractString; headers=Pair{String,String}[],
     body=nothing, ok=(200, 201), timeout::Real=60.0)

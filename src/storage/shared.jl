@@ -500,6 +500,7 @@ function StorageConfig(url::AbstractString, credential, service::AbstractString;
     end
     (cred isa TokenCredential && u.scheme != "https" && !AzureCore.is_local_host(u.host)) &&
         throw(ArgumentError("Token credential authentication is not permitted for non-TLS protected (non-https) URLs."))
+    _plaintext_credential_ok(u.scheme, u.host, cred, sas) || throw(ArgumentError(_PLAINTEXT_KEY_MSG))
     scope = audience === nothing ? STORAGE_OAUTH_SCOPE :
             endswith(String(audience), "/.default") ? String(audience) : string(rstrip(audience, '/'), "/.default")
     connection_verify === false &&
@@ -546,8 +547,26 @@ function _parse_bearer_challenge(resp)
     return tenant
 end
 
+"""
+Whether `cred` / a URL SAS may be sent over `scheme` to `host`. Over plain HTTP
+to anything but a loopback host (single-label emulator names, which may resolve
+through the DNS search domain to any machine) only anonymous access and
+Azurite's public development key are allowed, so a real account key or SAS
+never travels in clear text.
+"""
+function _plaintext_credential_ok(scheme, host, cred, sas)
+    (scheme == "https" || AzureCore.is_local_host(host)) && return true
+    sas === nothing || return false
+    return cred === nothing || cred isa AzureNamedKeyCredential && named_key(cred).key == DEV_ACCOUNT_KEY
+end
+
+const _PLAINTEXT_KEY_MSG = "plain HTTP to a host other than a loopback host (e.g. a docker-compose service name) \
+    is only allowed anonymously or with Azurite's public development key; use https for real credentials"
+
 function _authorize!(cfg::StorageConfig, method, url, hdrs::Vector{Pair{String,String}})
     cred = cfg.credential
+    # re-checked per request: a named key credential may have been rotated with update!
+    _plaintext_credential_ok(cfg.scheme, cfg.host, cred, cfg.sas) || throw(ArgumentError(_PLAINTEXT_KEY_MSG))
     if cred isa AzureNamedKeyCredential
         nk = named_key(cred)
         push!(hdrs, "Authorization" => shared_key_signature(nk.name, nk.key, method, url, hdrs))

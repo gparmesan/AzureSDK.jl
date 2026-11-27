@@ -208,7 +208,7 @@ function _http_send_batch(p::EventHubProducerClient, batch::EventDataBatch; time
     events = [AMQP.decode_message(m) for m in batch.messages]
     all_text = all(m -> m.body_type === :data && isvalid(String(copy(AMQP.body_bytes(m)))), events)
     _run(p, "send_batch"; timeout=timeout) do
-        auth = Messaging.http_authorization(cfg.credential, Messaging.resource_uri(cfg, p.eventhub_name), cfg.scope)
+        auth = Messaging.http_authorization(cfg, Messaging.resource_uri(cfg, p.eventhub_name))
         if all_text && length(events) > 1
             items = map(events) do m
                 d = Dict{String,Any}("Body" => String(copy(AMQP.body_bytes(m))))

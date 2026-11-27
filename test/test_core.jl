@@ -3,6 +3,7 @@ using AzureSDK.AzureCore
 using AzureSDK.EventHubs
 using AzureSDK.ServiceBus
 using Test, Dates
+const Messaging = AzureSDK.Messaging
 
 struct StaticTokenCredential <: TokenCredential end
 AzureCore.get_token_info(::StaticTokenCredential, scopes...; kwargs...) =
@@ -40,15 +41,43 @@ AzureCore.get_token_info(::StaticTokenCredential, scopes...; kwargs...) =
             @test_throws ArgumentError ServiceBus.parse_connection_string(
                 "Endpoint=sb://$h;SharedAccessKeyName=n;SharedAccessKey=k;UseDevelopmentEmulator=true")
         end
-        # docker-compose service names are allowed
+        # docker-compose service names are allowed, but only with the emulator's public key: such
+        # names may resolve through the DNS search domain to another machine, and there is no TLS
+        @test ServiceBus.parse_connection_string("Endpoint=sb://servicebus-emulator;SharedAccessKeyName=n;" *
+                                                 "SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true") !== nothing
+        @test_throws ArgumentError ServiceBus.parse_connection_string(
+            "Endpoint=sb://servicebus-emulator;SharedAccessKeyName=n;SharedAccessKey=k;UseDevelopmentEmulator=true")
+        @test_throws ArgumentError ServiceBus.parse_connection_string("Endpoint=sb://servicebus-emulator;" *
+                                                                      "SharedAccessSignature=SharedAccessSignature sr=a&sig=b&se=1&skn=c;UseDevelopmentEmulator=true")
+        # loopback hosts accept any key
         @test ServiceBus.parse_connection_string(
-            "Endpoint=sb://servicebus-emulator;SharedAccessKeyName=n;SharedAccessKey=k;UseDevelopmentEmulator=true") !== nothing
+            "Endpoint=sb://localhost;SharedAccessKeyName=n;SharedAccessKey=k;UseDevelopmentEmulator=true") !== nothing
         # the keyword form is checked too, and Entra tokens only go unencrypted to loopback hosts
         @test_throws ArgumentError ServiceBusClient("ns.servicebus.windows.net", AzureNamedKeyCredential("n", "k");
             use_development_emulator=true)
         @test_throws ArgumentError ServiceBusClient("servicebus-emulator", StaticTokenCredential(); use_development_emulator=true)
         close(ServiceBusClient("localhost", StaticTokenCredential(); use_development_emulator=true))
-        close(ServiceBusClient("servicebus-emulator", AzureNamedKeyCredential("n", "k"); use_development_emulator=true))
+        close(ServiceBusClient("servicebus-emulator", AzureNamedKeyCredential("n", "SAS_KEY_VALUE");
+            use_development_emulator=true))
+        @test_throws ArgumentError ServiceBusClient("servicebus-emulator", AzureNamedKeyCredential("n", "k");
+            use_development_emulator=true)
+        @test_throws ArgumentError ServiceBusClient("servicebus-emulator",
+            AzureSasCredential("SharedAccessSignature sr=a&sig=b&se=1"); use_development_emulator=true)
+        close(ServiceBusClient("localhost", AzureNamedKeyCredential("n", "k"); use_development_emulator=true))
+        # rotating to a real key after creation is caught when the key is used
+        rotated = AzureNamedKeyCredential("n", "SAS_KEY_VALUE")
+        cfg = Messaging.ClientConfig("servicebus-emulator", rotated, "scope", "test"; use_development_emulator=true)
+        @test startswith(Messaging.http_authorization(cfg, "sb://servicebus-emulator/q"), "SharedAccessSignature ")
+        AzureCore.update!(rotated, "n", "real-key")
+        @test_throws ArgumentError Messaging.http_authorization(cfg, "sb://servicebus-emulator/q")
+        @test_throws ArgumentError Messaging._checked_token_provider(cfg)("sb://servicebus-emulator/q")
+        # the private _scheme hook only selects the in-process loopback peer
+        for sch in (:amqp, :ws, :amqps, :wss, "amqp")
+            @test_throws ArgumentError Messaging.ClientConfig("ns.servicebus.windows.net", StaticTokenCredential(), "scope",
+                "test"; _scheme=sch)
+        end
+        @test Messaging.ClientConfig("ns.servicebus.windows.net", StaticTokenCredential(), "scope", "test";
+            _scheme=:loopback).scheme_override === :loopback
     end
 
     @testset "local and emulator hosts" begin

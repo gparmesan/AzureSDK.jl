@@ -26,9 +26,13 @@ use `EventHubs.OperationTimeoutError` or `ServiceBus.OperationTimeoutError`.
 * HTTP requests never follow redirects or store cookies, so credentials are
   never forwarded to another host. Service Bus REST lock URLs must point back
   to the namespace host. Bearer tokens, account keys and SAS tokens are only
-  sent over HTTPS. Plain connections are limited to local emulators (loopback
-  hosts or single-label container names such as `azurite`), and Entra ID
-  tokens are never sent unencrypted to anything but a loopback host.
+  sent over HTTPS. Plain connections are limited to local emulators. On a
+  loopback host any credential may be used; on a single-label container name
+  such as `azurite` (which may resolve through the DNS search domain to another
+  machine) only the emulators' public keys (Azurite's development key,
+  `SharedAccessKey=SAS_KEY_VALUE`) or anonymous access are accepted, so real
+  keys, SAS tokens and Entra ID tokens are never sent unencrypted off the
+  machine.
 * The Storage XML reader rejects DTDs and entity declarations (no XXE or entity
   expansion), bounds nesting depth and requires valid UTF-8.
 * The AMQP decoder validates every length and count against the received

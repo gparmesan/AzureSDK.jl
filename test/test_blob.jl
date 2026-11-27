@@ -161,6 +161,25 @@ Time:2026-01-01T00:00:00.0000000Z</Message></Error>"""
         # ... and over plain HTTP only to loopback, not to emulator container names
         @test_throws ArgumentError BlobServiceClient("http://azurite:10000/devstoreaccount1"; credential=FakeTokenCredential([]))
         @test BlobServiceClient("http://127.0.0.1:10000/devstoreaccount1"; credential=FakeTokenCredential([])) isa BlobServiceClient
+        # emulator container names get only anonymous access or Azurite's public key: they may resolve
+        # through the DNS search domain to another machine, and plain HTTP exposes keys and SAS
+        az = "http://azurite:10000/devstoreaccount1"
+        @test BlobServiceClient(az; credential=AzureNamedKeyCredential("devstoreaccount1", DEVKEY)) isa BlobServiceClient
+        @test BlobServiceClient(az) isa BlobServiceClient
+        realkey = base64encode(rand(UInt8, 64))
+        @test_throws ArgumentError BlobServiceClient(az; credential=AzureNamedKeyCredential("devstoreaccount1", realkey))
+        @test_throws ArgumentError BlobServiceClient(az; credential=AzureSasCredential("sv=1&sig=y&se=2"))
+        @test_throws ArgumentError BlobServiceClient(az * "?sv=1&sig=y&se=2")
+        # ... and loopback hosts accept them
+        @test BlobServiceClient("http://127.0.0.1:10000/devstoreaccount1";
+            credential=AzureNamedKeyCredential("devstoreaccount1", realkey)) isa BlobServiceClient
+        @test BlobServiceClient("http://127.0.0.1:10000/devstoreaccount1";
+            credential=AzureSasCredential("sv=1&sig=y&se=2")) isa BlobServiceClient
+        # a key rotated to a real one after creation is refused before the request is signed
+        rot = AzureNamedKeyCredential("devstoreaccount1", DEVKEY)
+        bsc = BlobServiceClient(az; credential=rot)
+        AzureCore.update!(rot, "devstoreaccount1", realkey)
+        @test_throws ArgumentError S._authorize!(getfield(bsc, :config), "GET", az * "/", Pair{String,String}[])
         @test_throws ArgumentError BlobServiceClient("https://acct.blob.core.windows.net?sv=1&sig=x&se=2";
             credential=AzureSasCredential("sv=1&sig=y&se=2"))
         @test_throws ArgumentError BlobServiceClient("https://acct.blob.core.windows.net"; max_block_size=0)
