@@ -20,3 +20,6 @@ Manifest-v*.toml
 *~
 *.swp
 .claude/
+
+# Benchmark output
+/benchmark/results*.json
