@@ -5,12 +5,12 @@ A pure-Julia client library for **Azure Event Hubs**, **Azure Service Bus**,
 and API follow the official Azure SDK for Python (`azure-eventhub`,
 `azure-servicebus`, `azure-storage-blob`, `azure-identity`, `azure-core`).
 
-* **AMQP 1.0** over TLS (port 5671), **AMQP over WebSockets** (port 443, proxy
+- **AMQP 1.0** over TLS (port 5671), **AMQP over WebSockets** (port 443, proxy
   support) and **HTTP/REST** transports
-* **Shared access keys / signatures** and **Entra ID tokens** (workload identity,
+- **Shared access keys / signatures** and **Entra ID tokens** (workload identity,
   managed identity, service principals, Azure CLI, …) with automatic token refresh
-* Automatic reconnection and retries with exponential back-off
-* Written in Julia (no Python or C SDK underneath); TLS via
+- Automatic reconnection and retries with exponential back-off
+- Written in Julia (no Python or C SDK underneath); TLS via
   [Reseau.jl](https://github.com/JuliaServices/Reseau.jl), HTTP and WebSockets via
   [HTTP.jl](https://github.com/JuliaWeb/HTTP.jl)
 
@@ -30,7 +30,7 @@ Julia 1.10 or newer is required.
 ## Package layout
 
 | Julia module            | Python package                                                       |
-|:------------------------|:---------------------------------------------------------------------|
+| :---------------------- | :------------------------------------------------------------------- |
 | `AzureSDK.Identity`     | `azure.identity`                                                     |
 | `AzureSDK.EventHubs`    | `azure.eventhub` (+ `azure.eventhub.extensions.checkpointstoreblob`) |
 | `AzureSDK.ServiceBus`   | `azure.servicebus`                                                   |
@@ -44,7 +44,7 @@ Python methods become Julia functions that take the client as their first
 argument, with the same names and keyword arguments:
 
 | Python                                                                | Julia                                                                  |
-|:----------------------------------------------------------------------|:-----------------------------------------------------------------------|
+| :-------------------------------------------------------------------- | :--------------------------------------------------------------------- |
 | `EventHubProducerClient.from_connection_string(s, eventhub_name="h")` | `from_connection_string(EventHubProducerClient, s; eventhub_name="h")` |
 | `producer.create_batch(partition_key="k")`                            | `create_batch(producer; partition_key="k")`                            |
 | `batch.add(EventData("x"))`                                           | `add!(batch, EventData("x"))`                                          |

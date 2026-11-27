@@ -5,10 +5,10 @@ A pure-Julia client library for **Azure Event Hubs**, **Azure Service Bus**,
 and API follow the official
 [Azure SDK for Python](https://github.com/Azure/azure-sdk-for-python).
 
-* AMQP 1.0, AMQP over WebSockets and HTTP transports
-* Shared access keys and signatures, or Entra ID tokens (workload identity,
+- AMQP 1.0, AMQP over WebSockets and HTTP transports
+- Shared access keys and signatures, or Entra ID tokens (workload identity,
   managed identity, service principals, Azure CLI, …)
-* Automatic reconnection, retries and token refresh
+- Automatic reconnection, retries and token refresh
 
 > This is an independent community project. It is not an official Microsoft
 > product and is not affiliated with or endorsed by Microsoft.

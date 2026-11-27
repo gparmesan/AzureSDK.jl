@@ -48,27 +48,27 @@ directly, with `from_connection_string`, `from_container_url` or
 
 ## Features
 
-* **Containers:** create, delete, exists, properties, metadata, access
+- **Containers:** create, delete, exists, properties, metadata, access
   policies, paged listing, undelete.
-* **Block blobs:** single-shot and parallel chunked upload, `stage_block`,
+- **Block blobs:** single-shot and parallel chunked upload, `stage_block`,
   `stage_block_from_url`, `commit_block_list`, `get_block_list`.
-* **Page blobs:** `create_page_blob`, `upload_page`, `upload_pages_from_url`,
+- **Page blobs:** `create_page_blob`, `upload_page`, `upload_pages_from_url`,
   `clear_page`, `get_page_ranges`, `list_page_ranges`, `resize_blob`,
   `set_sequence_number`.
-* **Append blobs:** `create_append_blob`, `append_block`,
+- **Append blobs:** `create_append_blob`, `append_block`,
   `append_block_from_url`, `seal_append_blob`.
-* **Downloads:** ranged and parallel, with MD5 validation.
-* **Blob management:** properties, HTTP headers, metadata, index tags, access
+- **Downloads:** ranged and parallel, with MD5 validation.
+- **Blob management:** properties, HTTP headers, metadata, index tags, access
   tiers, snapshots, versions, soft delete and undelete, copy
   (`start_copy_from_url`, `abort_copy`, `upload_blob_from_url`),
   immutability policies and legal holds, leases.
-* **Conditions and encryption:** `etag` + `MatchConditions`,
+- **Conditions and encryption:** `etag` + `MatchConditions`,
   `if_modified_since`, `if_tags_match_condition`, customer-provided keys and
   encryption scopes.
-* **Batches:** `delete_blobs`, `set_standard_blob_tier_blobs`.
-* **Account:** service properties (logging, metrics, CORS, soft delete, static
+- **Batches:** `delete_blobs`, `set_standard_blob_tier_blobs`.
+- **Account:** service properties (logging, metrics, CORS, soft delete, static
   website), `get_service_stats`, `get_account_information`.
-* **SAS generation:** account, container and blob SAS, signed with an account
+- **SAS generation:** account, container and blob SAS, signed with an account
   key or a user delegation key.
 
 ## Transfer tuning
@@ -82,11 +82,11 @@ returning mixed content.
 
 ## Differences from Python
 
-* Metadata is returned as a `CaseInsensitiveDict`: HTTP.jl normalises the case
+- Metadata is returned as a `CaseInsensitiveDict`: HTTP.jl normalises the case
   of response header names, and Azure treats metadata names
   case-insensitively.
-* ETags from listings are quoted like ETags from response headers.
-* `PageRange` uses `start`/`stop` (both inclusive), since `end` is reserved in Julia.
-* `readall` returns bytes unless an `encoding` was given.
+- ETags from listings are quoted like ETags from response headers.
+- `PageRange` uses `start`/`stop` (both inclusive), since `end` is reserved in Julia.
+- `readall` returns bytes unless an `encoding` was given.
 
 See the [Blob Storage API reference](@ref "Blob Storage API") for all functions.

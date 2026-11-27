@@ -22,14 +22,14 @@ end
 
 The Python-style call `receive(consumer, on_event; ...)` works as well.
 
-* **Load balancing across processes:** pass
+- **Load balancing across processes:** pass
   `checkpoint_store=BlobCheckpointStore(account_url, container; credential=...)`
   (or `from_connection_string(BlobCheckpointStore, conn, container)`). The blob
   layout is the same as in the other Azure SDKs, so Julia and Python consumers
   can share a consumer group.
-* `receive_batch(consumer, on_event_batch; max_batch_size=300, max_wait_time=...)`
-* `get_eventhub_properties`, `get_partition_ids`, `get_partition_properties`
-* `owner_level`, `track_last_enqueued_event_properties`, `prefetch`,
+- `receive_batch(consumer, on_event_batch; max_batch_size=300, max_wait_time=...)`
+- `get_eventhub_properties`, `get_partition_ids`, `get_partition_properties`
+- `owner_level`, `track_last_enqueued_event_properties`, `prefetch`,
   `load_balancing_strategy = LoadBalancingStrategy.GREEDY | BALANCED`
 
 See the [Event Hubs API reference](@ref "Event Hubs API") for all functions.
