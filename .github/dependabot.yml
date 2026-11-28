@@ -1,13 +1,20 @@
 # Keeps the GitHub Actions (pinned by commit SHA) and the emulator images
-# used by the workflows up to date.
+# used by the workflows up to date. Updates are grouped, so each ecosystem
+# gets at most one pull request per month.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
   # Emulator images in the docker compose files (pinned by version and digest).
   - package-ecosystem: docker-compose
     directory: /test/emulator
     schedule:
       interval: monthly
+    groups:
+      emulator-images:
+        patterns: ["*"]

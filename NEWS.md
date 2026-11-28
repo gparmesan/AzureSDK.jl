@@ -8,6 +8,10 @@ All notable changes to AzureSDK.jl are listed here. The format follows
 
 ### Fixed
 
+- The package now loads on macOS and Windows. `src/storage/blob/blob.jl` and
+  `src/storage/blob/Blob.jl` were the same file on their case-insensitive
+  filesystems; the former is now `blob_client.jl`, and a test rejects file
+  names that clash by case or are invalid on Windows.
 - Service Bus: a late reply to a drain request no longer makes
   `receive_messages` exceed `max_wait_time` in `PEEK_LOCK` mode, or lose
   messages in `RECEIVE_AND_DELETE` mode. Closing a `PEEK_LOCK` receiver
