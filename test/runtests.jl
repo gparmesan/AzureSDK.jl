@@ -14,6 +14,7 @@ include("certs.jl")
 
 @testset "AzureSDK.jl" begin
     include("test_aqua.jl")
+    include("test_portability.jl")
     include("test_codec.jl")
     include("test_core.jl")
     include("test_amqp_engine.jl")
